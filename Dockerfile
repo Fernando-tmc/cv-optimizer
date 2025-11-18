@@ -39,5 +39,5 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-# Run the application (simple command, config is in config.toml)
-CMD ["streamlit", "run", "app.py"]
+# Run the application with cv_optimizer.py
+CMD ["streamlit", "run", "cv_optimizer.py"]
