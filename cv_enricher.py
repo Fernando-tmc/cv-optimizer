@@ -1003,6 +1003,19 @@ EXPÉRIENCES:
             cv_text += "\nFORMATION:\n"
             for form in parsed_cv.get('formation', []):
                 cv_text += f"- {form.get('diplome', '')} | {form.get('institution', '')} | {form.get('annee', '')}\n"
+            
+            # ✅ FIX: Ajouter PROJETS pour traduction
+            cv_text += "\nPROJETS PERTINENTS:\n"
+            for projet in parsed_cv.get('projets', []):
+                cv_text += f"- {projet}\n"
+            
+            # ✅ FIX: Ajouter CERTIFICATIONS pour traduction
+            cv_text += "\nCERTIFICATIONS:\n"
+            for cert in parsed_cv.get('certifications', []):
+                cert_name = cert.get('nom', cert.get('name', ''))
+                cert_org = cert.get('organisme', cert.get('institution', ''))
+                cert_year = cert.get('annee', cert.get('year', ''))
+                cv_text += f"- {cert_name} | {cert_org} | {cert_year}\n"
         
             # PROMPT ULTRA-RENFORCÉ POUR COHÉRENCE ABSOLUE
             language_instruction = f"""
@@ -1128,6 +1141,19 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
       ],
       "environment": "**Open edX**, **SharePoint**, **Microsoft 365**, Teams, Power Automate, OneDrive, SQL"
     }}
+  ],
+  
+  "formation_enrichie": [
+    {{
+      "institution": "Institution name in {language}",
+      "diplome": "Degree title in {language}",
+      "annee": "2018"
+    }}
+  ],
+  
+  "projets_enrichis": [
+    "Project description 1 in {language}",
+    "Project description 2 in {language}"
   ]
 }}
 
@@ -1385,6 +1411,19 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
     }}
   ],
   
+  "formation_enrichie": [
+    {{
+      "institution": "Institution name in {language}",
+      "diplome": "Degree title in {language}",
+      "annee": "2018"
+    }}
+  ],
+  
+  "projets_enrichis": [
+    "Project description 1 in {language}",
+    "Project description 2 in {language}"
+  ],
+  
   FORMAT OBLIGATOIRE (COPIER format compétences):
   - Responsabilités: Technologies **isolées** dans texte normal (ex: "Configuration **Tech1** incluant **Tech2** pour résultats")
   - Environnement: Liste virgules avec 3-5 technologies **critiques** en gras, autres sans
@@ -1559,6 +1598,23 @@ Return the corrected JSON directly:"""
             print(f">>> ERROR: enriched is None after all retries", flush=True)
             return {}
         
+        # ✅ FIX: Décoder les entités HTML dans tout le contenu enrichi
+        import html
+        
+        def decode_html_in_dict(obj):
+            """Décode récursivement les entités HTML dans un dict/list/str"""
+            if isinstance(obj, dict):
+                return {k: decode_html_in_dict(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [decode_html_in_dict(item) for item in obj]
+            elif isinstance(obj, str):
+                return html.unescape(obj)
+            else:
+                return obj
+        
+        enriched = decode_html_in_dict(enriched)
+        print(f"✅ HTML entities decoded (&#x27; → ')", flush=True)
+        
         print(f">>> Keys in enriched: {list(enriched.keys())}", flush=True)
         
         # ⏱️ Calculer le temps de traitement
@@ -1714,19 +1770,6 @@ Return the corrected JSON directly:"""
             }
             work_experience.append(work_exp)
         
-        # 4. FORMATION (avec détails complets)
-        formation = parsed_cv.get('formation', [])
-        education = []
-        for form in formation:
-            education.append({
-                'institution': form.get('institution', ''),
-                'degree': form.get('diplome', ''),
-                'graduation_year': form.get('annee', 'Date inconnue'),
-                'country': form.get('pays', 'Canada'),
-                'level': '',
-                'title': form.get('diplome', '')
-            })
-        
         # 5. CERTIFICATIONS (avec mapping vers format template)
         certifications_raw = parsed_cv.get('certifications', [])
         certifications = []
@@ -1738,8 +1781,21 @@ Return the corrected JSON directly:"""
                 'country': cert.get('pays', cert.get('country', ''))
             })
         
-        # 6. PROJETS
-        projects = parsed_cv.get('projets', [])
+        # 6. PROJETS - ✅ FIX: Utiliser les projets enrichis (traduits) au lieu des bruts
+        projects = enriched_cv.get('projets_enrichis', parsed_cv.get('projets', []))
+        
+        # ✅ FIX: Ajouter formation enrichie (traduite)
+        formation_enrichie = enriched_cv.get('formation_enrichie', parsed_cv.get('formation', []))
+        education = []
+        for form in formation_enrichie:
+            education.append({
+                'institution': form.get('institution', ''),
+                'degree': form.get('diplome', ''),
+                'graduation_year': form.get('annee', 'Date inconnue'),
+                'country': form.get('pays', 'Canada'),
+                'level': '',
+                'title': form.get('diplome', '')
+            })
         
         # 7. INFORMATIONS PERSONNELLES
         nom_complet = parsed_cv.get('nom_complet', '')
