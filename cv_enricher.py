@@ -356,8 +356,8 @@ Extrait et structure en JSON STRICT (sans markdown):
     {{
       "diplome": "Nom COMPLET du diplôme",
       "institution": "Nom école/université",
-      "annee": "2020 (ou période exacte)",
-      "pays": "Canada"
+      "annee": "2020 (ou période exacte, sinon laisse vide)",
+      "pays": "Pays SEULEMENT s'il est explicitement écrit dans le CV, sinon chaîne vide \"\". Ne JAMAIS inventer ni mettre Canada par défaut."
     }}
   ],
   "certifications": [
@@ -1719,6 +1719,21 @@ Return the corrected JSON directly:"""
     def map_to_tmc_structure(self, parsed_cv: Dict[str, Any], enriched_cv: Dict[str, Any], template_lang: str = 'FR') -> Dict[str, Any]:
         """Mapper les données enrichies vers la structure TMC"""
         print("🗺️  Mapping vers structure TMC...")
+
+        # 🔧 DÉCODAGE À LA SOURCE : on neutralise toute entité HTML héritée du modèle
+        #    (&amp;, &#x27;, &gt;, ...) AVANT de construire RichText et le contexte.
+        #    L'échappement XML final (une seule fois) est fait dans generate_tmc_docx.
+        import html as _html_src
+        def _deep_unescape(o):
+            if isinstance(o, str):
+                return _html_src.unescape(o)
+            if isinstance(o, dict):
+                return {k: _deep_unescape(v) for k, v in o.items()}
+            if isinstance(o, list):
+                return [_deep_unescape(x) for x in o]
+            return o
+        parsed_cv = _deep_unescape(parsed_cv)
+        enriched_cv = _deep_unescape(enriched_cv)
         
         # 1. PROFIL - Convertir en RichText pour supporter le gras (pas d'échappement)
         profil_brut = enriched_cv.get('profil_enrichi', parsed_cv.get('profil_resume', ''))
@@ -1746,7 +1761,7 @@ Return the corrected JSON directly:"""
         for cat, skills in skills_categorized.items():
             rt_cat = RichText()
             rt_cat.add(cat, bold=True)
-            rt_skills = [self.mdbold_to_richtext(s) for s in skills]
+            rt_skills = [self.mdbold_to_richtext(s) for s in skills if s and str(s).strip()]
             skills_categorized_doc.append((rt_cat, rt_skills))
         
         # 3. EXPÉRIENCES - Texte simple pour les responsabilités, RichText pour environnement
@@ -1755,7 +1770,7 @@ Return the corrected JSON directly:"""
         
         for exp in experiences_enrichies:
             # GARDER les responsabilités en TEXTE SIMPLE (pas RichText) - pas d'échappement
-            responsabilites_text = [r for r in exp.get('responsabilites', [])]
+            responsabilites_text = [r for r in exp.get('responsabilites', []) if r and str(r).strip()]
             
             # Convertir l'environnement en RichText pour le gras - pas d'échappement
             environment_brut = exp.get('environment', '')
@@ -1771,30 +1786,42 @@ Return the corrected JSON directly:"""
             work_experience.append(work_exp)
         
         # 5. CERTIFICATIONS (avec mapping vers format template)
+        # 🧹 Nettoyage : on n'affiche JAMAIS "Not specified" / "Date inconnue" / etc.
+        #    Un champ manquant devient une chaîne vide (rien ne s'affiche à la place).
+        _JUNK_VALUES = {
+            'not specified', 'non spécifié', 'non specifie', 'not specify',
+            'date inconnue', 'inconnu', 'inconnue', 'unknown',
+            'n/a', 'na', 'none', 'null', ''
+        }
+        def _clean_field(v):
+            v = '' if v is None else str(v).strip()
+            return '' if v.lower() in _JUNK_VALUES else v
+
         certifications_raw = parsed_cv.get('certifications', [])
         certifications = []
         for cert in certifications_raw:
             certifications.append({
-                'name': cert.get('nom', cert.get('name', '')),
-                'institution': cert.get('organisme', cert.get('institution', '')),
-                'year': str(cert.get('annee', cert.get('year', ''))),
-                'country': cert.get('pays', cert.get('country', ''))
+                'name': _clean_field(cert.get('nom', cert.get('name', ''))),
+                'institution': _clean_field(cert.get('organisme', cert.get('institution', ''))),
+                'year': _clean_field(cert.get('annee', cert.get('year', ''))),
+                'country': _clean_field(cert.get('pays', cert.get('country', '')))
             })
         
-        # 6. PROJETS - ✅ FIX: Utiliser les projets enrichis (traduits) au lieu des bruts
-        projects = enriched_cv.get('projets_enrichis', parsed_cv.get('projets', []))
+        # 6. PROJETS - ❌ Section "Projets pertinents" retirée (demande Aymeric, juin 2026)
+        #    Le template masque automatiquement titre + contenu quand la liste est vide.
+        projects = []
         
         # ✅ FIX: Ajouter formation enrichie (traduite)
         formation_enrichie = enriched_cv.get('formation_enrichie', parsed_cv.get('formation', []))
         education = []
         for form in formation_enrichie:
             education.append({
-                'institution': form.get('institution', ''),
-                'degree': form.get('diplome', ''),
-                'graduation_year': form.get('annee', 'Date inconnue'),
-                'country': form.get('pays', 'Canada'),
+                'institution': _clean_field(form.get('institution', '')),
+                'degree': _clean_field(form.get('diplome', '')),
+                'graduation_year': _clean_field(form.get('annee', '')),
+                'country': _clean_field(form.get('pays', '')),
                 'level': '',
-                'title': form.get('diplome', '')
+                'title': _clean_field(form.get('diplome', ''))
             })
         
         # 7. INFORMATIONS PERSONNELLES
@@ -1946,51 +1973,45 @@ Return the corrected JSON directly:"""
         # 🔥 Ajouter la fonction r pour RichText dans le contexte
         context['r'] = lambda x: x
         
-        # ⚠️ CORRECTION XML : Échapper les caractères spéciaux (®, &, <, >, etc.)
-        from html import escape as html_escape
-        print(f"   🔧 Échappement des caractères XML spéciaux...")
-        
-        # Échapper les champs texte simples
-        for key in ['first_name', 'last_name', 'title', 'FIRST_NAME', 'LAST_NAME', 
-                   'TITLE', 'residency', 'RESIDENCY', 'languages', 'LANGUAGES']:
-            if key in context and isinstance(context[key], str):
-                context[key] = html_escape(context[key])
-        
-        # Échapper les expériences
-        if 'work_experience' in context:
-            for exp in context['work_experience']:
-                for key in ['period', 'company', 'position']:
-                    if key in exp and isinstance(exp[key], str):
-                        exp[key] = html_escape(exp[key])
-                
-                if 'general_responsibilities' in exp and isinstance(exp['general_responsibilities'], list):
-                    exp['general_responsibilities'] = [
-                        html_escape(r) if isinstance(r, str) else r
-                        for r in exp['general_responsibilities']
-                    ]
-        
-        # Échapper formations
-        if 'education' in context:
-            for edu in context['education']:
-                for key in ['institution', 'degree', 'graduation_year', 'country', 'level', 'title']:
-                    if key in edu and isinstance(edu[key], str):
-                        edu[key] = html_escape(edu[key])
-        
-        # Échapper certifications
-        if 'certifications' in context:
-            for cert in context['certifications']:
-                for key in ['name', 'institution', 'year', 'country']:
-                    if key in cert and isinstance(cert[key], str):
-                        cert[key] = html_escape(cert[key])
-        
-        # Échapper projets
-        if 'projects' in context:
-            for proj in context['projects']:
-                for key in ['nom', 'description']:
-                    if key in proj and isinstance(proj[key], str):
-                        proj[key] = html_escape(proj[key])
-        
-        print(f"   ✅ Caractères XML échappés (®, &, <, >, etc.)")
+        # 🔧 ÉCHAPPEMENT XML — UNE SEULE FOIS (les entités ont été décodées à la source)
+        # L\'environnement Jinja passé à docxtpl n\'auto-échappe PAS : les champs texte
+        # simples doivent donc être rendus valides en XML (&, <, >). Comme les entités
+        # héritées du modèle ont déjà été décodées dans map_to_tmc_structure, on échappe
+        # ICI une seule fois -> fini les "&amp;" et "&#x27;" en double. quote=False garde
+        # les apostrophes intactes. Les champs RichText (profil, compétences, environnement)
+        # gèrent leur propre échappement et ne sont PAS retouchés ici.
+        from html import escape as _xml_escape
+        def _xs(v):
+            return _xml_escape(v, quote=False) if isinstance(v, str) else v
+
+        for key in ['first_name', 'last_name', 'title', 'FIRST_NAME', 'LAST_NAME',
+                    'TITLE', 'residency', 'RESIDENCY', 'languages', 'LANGUAGES']:
+            if key in context:
+                context[key] = _xs(context[key])
+
+        for exp in context.get('work_experience', []):
+            for key in ['period', 'company', 'position']:
+                if key in exp:
+                    exp[key] = _xs(exp[key])
+            if isinstance(exp.get('general_responsibilities'), list):
+                exp['general_responsibilities'] = [_xs(r) for r in exp['general_responsibilities']]
+
+        for edu in context.get('education', []):
+            for key in ['institution', 'degree', 'graduation_year', 'country', 'level', 'title']:
+                if key in edu:
+                    edu[key] = _xs(edu[key])
+
+        for cert in context.get('certifications', []):
+            for key in ['name', 'institution', 'year', 'country']:
+                if key in cert:
+                    cert[key] = _xs(cert[key])
+
+        for proj in context.get('projects', []):
+            for key in ['name', 'nom', 'description']:
+                if key in proj:
+                    proj[key] = _xs(proj[key])
+
+        print(f"   ✅ Caractères XML échappés une seule fois (apostrophes & corrigés)")
         
         # Charger le template TMC
         doc = DocxTemplate(final_template_path)
