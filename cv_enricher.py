@@ -1800,11 +1800,16 @@ Return the corrected JSON directly:"""
         certifications_raw = parsed_cv.get('certifications', [])
         certifications = []
         for cert in certifications_raw:
+            _cn = _clean_field(cert.get('nom', cert.get('name', '')))
+            _ci = _clean_field(cert.get('organisme', cert.get('institution', '')))
+            _cy = _clean_field(cert.get('annee', cert.get('year', '')))
+            _cc = _clean_field(cert.get('pays', cert.get('country', '')))
+            # Ligne affichée : Nom │ Organisme │ Année — les champs vides (et leur
+            # séparateur) sont simplement omis. Le pays n'est plus affiché.
+            _cert_line = ' │ '.join([p for p in [_cn, _ci, _cy] if p])
             certifications.append({
-                'name': _clean_field(cert.get('nom', cert.get('name', ''))),
-                'institution': _clean_field(cert.get('organisme', cert.get('institution', ''))),
-                'year': _clean_field(cert.get('annee', cert.get('year', ''))),
-                'country': _clean_field(cert.get('pays', cert.get('country', '')))
+                'name': _cn, 'institution': _ci, 'year': _cy, 'country': _cc,
+                'line': _cert_line,
             })
         
         # 6. PROJETS - ❌ Section "Projets pertinents" retirée (demande Aymeric, juin 2026)
@@ -2002,7 +2007,7 @@ Return the corrected JSON directly:"""
                     edu[key] = _xs(edu[key])
 
         for cert in context.get('certifications', []):
-            for key in ['name', 'institution', 'year', 'country']:
+            for key in ['name', 'institution', 'year', 'country', 'line']:
                 if key in cert:
                     cert[key] = _xs(cert[key])
 
