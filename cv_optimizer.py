@@ -1091,21 +1091,26 @@ def display_matching_results(data):
             bg = '#fef2f2' if match == 'incompatible' else ('#fffbeb' if match == 'partiel' else '#f0fdf4')
             return [f'background-color: {bg}; vertical-align: top'] * len(row)
         
-        # st.table affiche le commentaire EN ENTIER (retour a la ligne) et se copie-colle bien.
+        # Rendu HTML complet : index masque (pas de 0,1,2...), commentaire entier
+        # (retour a la ligne), couleurs par ligne, bordures. Se copie-colle bien.
         try:
-            styled_df = (
+            styler = (
                 df_display.style
                 .apply(style_rows, axis=1)
-                .set_properties(subset=['Commentaire'], **{'white-space': 'normal', 'text-align': 'left'})
-                .set_properties(subset=['Domaine'], **{'white-space': 'normal', 'font-weight': '600'})
+                .set_properties(subset=['Commentaire'], **{'white-space': 'normal', 'text-align': 'left', 'vertical-align': 'top'})
+                .set_properties(subset=['Domaine'], **{'white-space': 'normal', 'font-weight': '600', 'vertical-align': 'top', 'width': '26%'})
+                .set_table_styles([
+                    {'selector': 'table', 'props': [('width', '100%'), ('border-collapse', 'collapse'), ('font-size', '0.9rem')]},
+                    {'selector': 'th', 'props': [('text-align', 'left'), ('background-color', '#f1f5f9'), ('border', '1px solid #d1d5db'), ('padding', '8px')]},
+                    {'selector': 'td', 'props': [('border', '1px solid #e5e7eb'), ('padding', '8px')]},
+                ])
             )
             try:
-                styled_df = styled_df.hide(axis='index')
+                styler = styler.hide(axis='index')
             except Exception:
-                pass
-            st.table(styled_df)
+                styler = styler.hide_index()
+            st.markdown(styler.to_html(), unsafe_allow_html=True)
         except Exception:
-            # repli : tableau simple sans couleurs (toujours complet et copiable)
             st.table(df_display.reset_index(drop=True))
         
         st.markdown("<br>", unsafe_allow_html=True)
