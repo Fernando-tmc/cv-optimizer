@@ -1082,25 +1082,34 @@ Si UNE SEULE phrase n'est pas en {language} → RECOMMENCE TOUT.
                 # ============================================
                 prompt = f"""Voici la job description et le CV actuel ci-dessous.
 
-🔹 Améliore le CV pour qu'il soit parfaitement aligné avec la job description tout en gardant le format d'origine (titres, mise en page, structure, ton professionnel).
+🔹 Reformate et reformule LÉGÈREMENT le CV ci-dessous au format TMC, en gardant un ton professionnel sobre.
 {language_instruction}
 
-⚠️ IMPORTANT: L'analyse de matching a DÉJÀ été faite. Tu dois UNIQUEMENT faire l'ENRICHISSEMENT du contenu.
+🚫🚫 RÈGLE N°1 — FIDÉLITÉ ABSOLUE, ZÉRO INVENTION (prime sur tout le reste) 🚫🚫
+- Utilise UNIQUEMENT des informations RÉELLEMENT présentes dans le CV source ci-dessous.
+- INTERDIT d'ajouter une compétence, technologie, outil, chiffre, résultat ou responsabilité absent du CV.
+- INTERDIT de "compléter" avec des mots-clés de la Job Description que le candidat n'a pas. La JD sert SEULEMENT à choisir quels éléments VRAIS du CV mettre en avant et dans quel ordre — JAMAIS à ajouter ce qui est absent.
+- Si une info n'est pas dans le CV (résultat chiffré, outil...), NE L'INVENTE PAS.
+- En cas de doute : ne le mets pas.
+
+🎙️ TON — sobre et factuel (surtout PAS "IA"/marketing) :
+- Style professionnel neutre, comme un consultant le rédigerait.
+- INTERDIT : superlatifs/formules marketing ("exceptionnel", "expert reconnu", "passionné", "maîtrise parfaite", "solide expérience", "dynamique"...).
+- Phrases simples et directes, sans emphase artificielle.
+
+⚠️ L'analyse de matching est DÉJÀ faite. Tu fais UNIQUEMENT la reformulation fidèle du contenu.
 
 Fais :
 
-1. Une version réécrite et enrichie du CV
+1. TITRE court en {language} (3-5 mots max), basé sur le VRAI métier du candidat (orienté JD seulement si ça reste vrai).
 
-2a. TITRE: TITRE COURT adapté à la JD en {language} (3-5 mots max)
+2. PROFIL: paragraphe factuel de 4-5 lignes en {language}, reformulant le profil RÉEL (pas de superlatifs). 3-5 technologies réellement maîtrisées en **gras**.
 
-2b. PROFIL exceptionnel : écris un paragraphe NARRATIF fluide (pas de liste), 5-6 lignes avec progression logique.
-
-2c. GRAS ULTRA-SÉLECTIF : identifie UNIQUEMENT 3-5 technologies CRITIQUES.
-
-3. Intègre naturellement les mots-clés techniques de la JD
-4. Ajuste les intitulés pour que le profil paraisse livrable immédiatement
-5. N'invente rien — reformule uniquement les éléments présents
-6. EXPÉRIENCES : bullets courts (1 ligne max), maximum 5-6 bullets par expérience
+3. EXPÉRIENCES — reformulation LÉGÈRE (jamais de copié-collé mot à mot, jamais d'invention) :
+   - Style NOMINAL uniforme : chaque ligne commence par un nom d'action ("Conception de…", "Réalisation de…", "Développement de…", "Migration de…", "Analyse de…").
+   - JAMAIS à la 1re personne ("j'ai…"), JAMAIS à l'infinitif en tête ("Réaliser…").
+   - Mêmes FAITS que le CV source, juste mieux formulés et homogènes.
+   - Bullets courts (1 ligne), 4-6 par expérience max.
 
 Réponds en JSON STRICT (sans markdown) avec cette structure:
 {{
@@ -1108,12 +1117,12 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   
   "profil_enrichi": "Profil NARRATIF 5-6 lignes en {language} avec **3-5 technologies clés** en gras",
   
-  "mots_cles_a_mettre_en_gras": ["Liste 15-20 TECHNOLOGIES de la JD - PAS de verbes génériques"],
+  "mots_cles_a_mettre_en_gras": ["Technologies RÉELLEMENT présentes dans le CV (recoupant éventuellement la JD) - PAS de technos absentes du CV"],
   
   "competences_enrichies": {{
     "Nom Catégorie 1 (3-6 mots max)": [
-      "**Technologie principale** : description en 2-3 lignes (MAXIMUM 100-150 caractères) incluant contexte, outils associés (**outil1**, **outil2**) et résultats. Style concis et percutant.",
-      "**Autre technologie** : description COURTE avec contexte + outils (**tech1**, **tech2**) + impact. 2-3 technologies en **gras** par compétence."
+      "**Compétence réelle** : description courte (100-150 caractères max) UNIQUEMENT à partir de ce qui figure dans le CV. N'ajoute aucun outil ni résultat absent du CV.",
+      "**Autre compétence réelle** : description factuelle et concise, sans invention."
     ],
     "Nom Catégorie 2": [
       "Compétence concise..."
@@ -1125,16 +1134,15 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   - 5-6 catégories ADAPTÉES à la JD
   - Chaque catégorie: 3-5 compétences MAXIMUM
   - CHAQUE compétence : 2-3 LIGNES MAXIMUM (100-150 caractères) - NE PAS DÉPASSER
-  - Format: "**Technologie** : description concise avec outils (**outil1**, **outil2**) + résultats"
-  - 2-3 technologies en **gras** par compétence (PAS PLUS)
-  - Descriptions CONCISES, CLAIRES et PROFESSIONNELLES
-  - Privilégier CLARTÉ et CONCISION sur la longueur
+  - N'inclus QUE des compétences réellement présentes dans le CV. AUCUNE compétence inventée, même si la JD la demande.
+  - Descriptions factuelles et sobres, sans superlatifs ni résultats chiffrés inventés
+  - 1-3 technologies RÉELLES en **gras** par compétence
   
   "experiences_enrichies": [
     {{
       "periode": "2020-2023",
       "entreprise": "Nom entreprise",
-      "poste": "Titre reformulé selon JD",
+      "poste": "Titre RÉEL du poste (reformulé seulement si fidèle)",
       "responsabilites": [
         "Configuration **Open edX** incluant structuration et intégration avec **SharePoint** pour gestion contenus",
         "Automatisation processus documentaires via **Power Automate** et **Teams** pour améliorer efficacité"
@@ -1192,8 +1200,14 @@ Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
                 # ============================================
                 prompt = f"""Voici la job description et le CV actuel ci-dessous.
 
-🔹 Améliore le CV pour qu'il soit parfaitement aligné avec la job description tout en gardant le format d'origine (titres, mise en page, structure, ton professionnel).
+🔹 Reformate et reformule LÉGÈREMENT le CV au format TMC, ton professionnel sobre.
 {language_instruction}
+
+🚫🚫 RÈGLE N°1 — FIDÉLITÉ ABSOLUE, ZÉRO INVENTION (prime sur tout) 🚫🚫
+- Utilise UNIQUEMENT ce qui est RÉELLEMENT dans le CV source. INTERDIT d'ajouter compétence, techno, outil, chiffre ou résultat absent du CV.
+- La JD sert à choisir quels éléments VRAIS mettre en avant, JAMAIS à ajouter ce que le candidat n'a pas.
+- Ton sobre/factuel : INTERDIT les superlatifs et formules marketing ("exceptionnel", "expert reconnu", "passionné"...).
+- Expériences : style NOMINAL ("Conception de…", "Réalisation de…"), jamais à la 1re personne, jamais d'invention.
 
 🎯 ANALYSE DE MATCHING PONDÉRÉE (ULTRA-CRITIQUE - COHÉRENCE ABSOLUE REQUISE):
 
@@ -1336,16 +1350,15 @@ RECOMMENDATION: This profile requires major reconversion and is NOT recommended 
 Fais :
 
 1. ANALYSE PONDÉRÉE OBLIGATOIRE (voir ci-dessus)
-2. Une version réécrite et enrichie du CV
+2. Une version reformatée et LÉGÈREMENT reformulée du CV (zéro invention)
 
-2b. PROFIL exceptionnel : écris un paragraphe NARRATIF fluide (pas de liste), 5-6 lignes avec progression logique.
+2b. PROFIL factuel : paragraphe de 4-5 lignes, profil RÉEL du candidat, sans superlatifs. 3-5 technologies réelles en **gras**.
 
-2c. GRAS ULTRA-SÉLECTIF : identifie UNIQUEMENT 3-5 technologies CRITIQUES.
+2c. GRAS ULTRA-SÉLECTIF : 3-5 technologies CRITIQUES réellement maîtrisées.
 
-3. Intègre naturellement les mots-clés techniques de la JD
-4. Ajuste les intitulés pour que le profil paraisse livrable immédiatement
-5. N'invente rien — reformule uniquement les éléments présents
-6. EXPÉRIENCES : bullets courts (1 ligne max), maximum 5-6 bullets par expérience
+3. N'ajoute AUCUN mot-clé de la JD que le candidat n'a pas (zéro invention)
+4. Garde les intitulés fidèles à la réalité
+5. EXPÉRIENCES : style NOMINAL uniforme ("Conception de…", "Réalisation de…"), jamais à la 1re personne ni à l'infinitif ; mêmes faits que le CV, bullets courts (1 ligne), 4-6 max
 
 Réponds en JSON STRICT (sans markdown) avec cette structure:
 {{
@@ -1376,12 +1389,12 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   
   "profil_enrichi": "Profil NARRATIF 5-6 lignes en {language} avec **3-5 technologies clés** en gras",
   
-  "mots_cles_a_mettre_en_gras": ["Liste 15-20 TECHNOLOGIES de la JD - PAS de verbes génériques"],
+  "mots_cles_a_mettre_en_gras": ["Technologies RÉELLEMENT présentes dans le CV (recoupant éventuellement la JD) - PAS de technos absentes du CV"],
   
   "competences_enrichies": {{
     "Nom Catégorie 1 (3-6 mots max)": [
-      "**Technologie principale** : description en 2-3 lignes (MAXIMUM 100-150 caractères) incluant contexte, outils associés (**outil1**, **outil2**) et résultats. Style concis et percutant.",
-      "**Autre technologie** : description COURTE avec contexte + outils (**tech1**, **tech2**) + impact. 2-3 technologies en **gras** par compétence."
+      "**Compétence réelle** : description courte (100-150 caractères max) UNIQUEMENT à partir de ce qui figure dans le CV. N'ajoute aucun outil ni résultat absent du CV.",
+      "**Autre compétence réelle** : description factuelle et concise, sans invention."
     ],
     "Nom Catégorie 2": [
       "Compétence concise..."
@@ -1393,16 +1406,15 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   - 5-6 catégories ADAPTÉES à la JD
   - Chaque catégorie: 3-5 compétences MAXIMUM
   - CHAQUE compétence : 2-3 LIGNES MAXIMUM (100-150 caractères) - NE PAS DÉPASSER
-  - Format: "**Technologie** : description concise avec outils (**outil1**, **outil2**) + résultats"
-  - 2-3 technologies en **gras** par compétence (PAS PLUS)
-  - Descriptions CONCISES, CLAIRES et PROFESSIONNELLES
-  - Privilégier CLARTÉ et CONCISION sur la longueur
+  - N'inclus QUE des compétences réellement présentes dans le CV. AUCUNE compétence inventée, même si la JD la demande.
+  - Descriptions factuelles et sobres, sans superlatifs ni résultats chiffrés inventés
+  - 1-3 technologies RÉELLES en **gras** par compétence
   
   "experiences_enrichies": [
     {{
       "periode": "2020-2023",
       "entreprise": "Nom entreprise",
-      "poste": "Titre reformulé selon JD",
+      "poste": "Titre RÉEL du poste (reformulé seulement si fidèle)",
       "responsabilites": [
         "Configuration **Open edX** incluant structuration et intégration avec **SharePoint** pour gestion contenus",
         "Automatisation processus documentaires via **Power Automate** et **Teams** pour améliorer efficacité"
