@@ -437,7 +437,7 @@ RÈGLES CRITIQUES:
         else:
             return self.extract_from_txt(jd_path)
     
-    def analyze_cv_matching(self, parsed_cv: Dict[str, Any], jd_text: str) -> Dict[str, Any]:
+    def analyze_cv_matching(self, parsed_cv: Dict[str, Any], jd_text: str, language: str = "French") -> Dict[str, Any]:
         """
         Analyser le matching entre CV et JD sans enrichir le contenu.
         Retourne uniquement: score_matching, domaines_analyses, synthese_matching
@@ -712,10 +712,9 @@ Retourne UNIQUEMENT un JSON avec cette structure (sans texte avant/après):
 - Commentaire: minimum 2-3 phrases complètes avec détails factuels précis du CV
 - Synthèse: MAXIMUM 4-5 lignes (80-100 mots), format executive summary
 
-⚠️ LANGUE: ALL output must be in ENGLISH.
-- Domain names in English (e.g., "Python Backend Development", not "Développement Backend Python")
-- All comments in English
-- Synthesis in English (4-5 lines max)
+⚠️ LANGUE DE SORTIE: TOUT le texte (noms de domaines, commentaires, synthèse) doit être rédigé en {language}.
+- Si {language} = "French": noms de domaines, commentaires et synthèse 100% en français.
+- Si {language} = "English": domain names, comments and synthesis 100% in English.
 
 Génère l'analyse maintenant:"""
             

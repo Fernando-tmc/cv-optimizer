@@ -928,7 +928,7 @@ def process_cv_matching():
         
         # Step 3: Matching Analysis
         jd_text = enricher.read_job_description(str(jd_path))
-        matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text)
+        matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text, language=st.session_state.selected_language)
         
         timeline_placeholder.empty()
         
@@ -955,6 +955,36 @@ def process_cv_matching():
 # ==========================================
 # 📊 DISPLAY RESULTS
 # ==========================================
+
+def build_matching_report_docx(results, parsed_cv):
+    """Construit un .docx du tableau de matching (à envoyer au candidat)."""
+    from docx import Document
+    import io
+    doc = Document()
+    nom = (parsed_cv.get('nom_complet') or 'Candidat').strip()
+    doc.add_heading(f"Analyse de matching — {nom}", level=1)
+    doc.add_paragraph(f"Score global : {results.get('score_matching', 0)}/100")
+    domaines = results.get('domaines_analyses', [])
+    if domaines:
+        t = doc.add_table(rows=1, cols=4)
+        t.style = 'Table Grid'
+        hdr = t.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text, hdr[3].text = 'Domaine', 'Poids', 'Score', 'Commentaire'
+        for d in domaines:
+            c = t.add_row().cells
+            c[0].text = str(d.get('domaine', ''))
+            c[1].text = f"{d.get('poids', '')}%"
+            c[2].text = f"{d.get('score', '')}/{d.get('score_max', '')}"
+            c[3].text = str(d.get('commentaire', ''))
+    synth = results.get('synthese_matching', '')
+    if synth:
+        doc.add_heading("Synthèse", level=2)
+        doc.add_paragraph(synth)
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
 
 def display_matching_results(data):
     """Display matching results with professional styling"""
@@ -1197,6 +1227,20 @@ def display_matching_results(data):
     
     st.markdown("<br>", unsafe_allow_html=True)
     
+    st.markdown("---")
+    try:
+        report_bytes = build_matching_report_docx(results, parsed_cv)
+        nom_dl = (parsed_cv.get('nom_complet') or 'Candidat').strip()
+        st.download_button(
+            "📥 Télécharger le tableau de matching",
+            data=report_bytes,
+            file_name=f"Matching - {nom_dl}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            key="download_matching_btn"
+        )
+    except Exception as e:
+        st.warning(f"Export du tableau indisponible : {e}")
     st.info("➡️ Pour générer le CV au format TMC, utilise le bouton « 📄 CV converti TMC » en haut de la page.")
 
 # ==========================================
@@ -1219,7 +1263,7 @@ def process_cv_generation():
         if st.session_state.jd_file:
             jd_path = save_uploaded(st.session_state.jd_file)
             jd_text = enricher.read_job_description(str(jd_path))
-            matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text)
+            matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text, language=st.session_state.selected_language)
         data = {
             'parsed_cv': parsed_cv,
             'jd_text': jd_text or "(Aucune description de poste fournie — reformate fidèlement le CV au format TMC, sans cibler d'offre.)",
