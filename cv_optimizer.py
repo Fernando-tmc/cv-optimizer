@@ -385,6 +385,26 @@ def local_css():
         [data-testid="stDownloadButton"] > button:active {{
             transform: translateY(0) !important;
         }}
+
+        /* ===== Refonte UI ===== */
+        [data-testid="column"] [data-testid="stMarkdownContainer"] h3 {{ min-height: 3.4em; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] span {{ display: none; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] small {{ display: none; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] > div::before {{
+            content: "Glissez-deposez un fichier ici"; font-weight: 600; color: #374151;
+        }}
+        [data-testid="stFileUploaderDropzoneInstructions"] > div::after {{
+            content: "Taille max. 200 Mo par fichier"; display: block; font-size: 0.8rem; color: #6b7280; margin-top: 2px;
+        }}
+        [data-testid="stFileUploaderDropzone"] button {{ font-size: 0 !important; }}
+        [data-testid="stFileUploaderDropzone"] button::after {{ content: "Parcourir"; font-size: 0.9rem; }}
+        .stButton button[kind="primary"],
+        [data-testid="baseButton-primary"],
+        [data-testid="stBaseButton-primary"] {{
+            background: linear-gradient(90deg, {PRIMARY_BLUE} 0%, {SECONDARY_ORANGE} 100%) !important;
+            color: #ffffff !important; border: none !important; border-radius: 12px !important;
+            font-weight: 700 !important; padding: 0.85rem 1.5rem !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -678,7 +698,7 @@ def show_login_screen():
                 </text>
             </svg>
         </div>
-        <p class="tmc-subtitle">Generate optimized CVs with AI</p>
+        <p class="tmc-subtitle">Générez des CV optimisés grâce à l'IA</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -740,29 +760,24 @@ def main_app():
         st.markdown("""
         <div class="privacy-note">
             <span>🔒</span>
-            <span>Your data is processed securely and never stored</span>
+            <span>Vos données sont traitées de façon sécurisée et jamais conservées</span>
         </div>
         """, unsafe_allow_html=True)
         
-        # Buttons
-        col_new, col_logout = st.columns(2)
-        
-        with col_new:
-            if st.button("🔄 New", use_container_width=True, key="new_button"):
-                st.session_state.matching_done = False
-                st.session_state.matching_data = None
-                st.session_state.cv_file = None
-                st.session_state.jd_file = None
-                st.session_state.processing = False
-                st.session_state.skills_matrix_file = None
-                st.session_state.show_generate_button = False
-                st.session_state.reset_counter += 1
-                st.rerun()
-        
-        with col_logout:
-            if st.button("🚪 Logout", use_container_width=True, key="logout_button"):
-                clear_session()
-                st.rerun()
+        # Boutons (empiles pour eviter la coupure du texte)
+        if st.button("🔄 Nouveau", use_container_width=True, key="new_button"):
+            st.session_state.matching_done = False
+            st.session_state.matching_data = None
+            st.session_state.cv_file = None
+            st.session_state.jd_file = None
+            st.session_state.processing = False
+            st.session_state.skills_matrix_file = None
+            st.session_state.show_generate_button = False
+            st.session_state.reset_counter += 1
+            st.rerun()
+        if st.button("🚪 Deconnexion", use_container_width=True, key="logout_button"):
+            clear_session()
+            st.rerun()
         
         # Logo at bottom of sidebar
         logo_path = "TMC big logo.png"
@@ -799,8 +814,8 @@ def main_app():
                 </text>
             </svg>
         </div>
-        <p class="tmc-subtitle">Generate a professional CV perfectly aligned with your Job Description</p>
-        <p class="tmc-subtitle" style="margin-top: 0.2rem; font-size: 0.95rem;">Designed for Business Managers and Recruiters</p>
+        <p class="tmc-subtitle">Générez un CV professionnel parfaitement aligné avec votre description de poste</p>
+        <p class="tmc-subtitle" style="margin-top: 0.2rem; font-size: 0.95rem;">Conçu pour les Business Managers et recruteurs</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -863,12 +878,12 @@ def main_app():
     b1, b2 = st.columns(2)
     with b1:
         matching_btn = st.button(
-            "📊 Tableau de matching", use_container_width=True, key="matching_btn",
+            "📊 Tableau de matching", use_container_width=True, type="primary", key="matching_btn",
             help="Nécessite un CV ET une description de poste"
         )
     with b2:
         generate_btn = st.button(
-            "📄 CV converti TMC", use_container_width=True, key="generate_btn",
+            "📄 CV converti TMC", use_container_width=True, type="primary", key="generate_btn",
             help="Nécessite au moins un CV (la description de poste est optionnelle)"
         )
 
@@ -1447,8 +1462,8 @@ def show_footer():
     st.markdown(
         f"""
         <div class='tmc-footer'>
-            <strong>CV Optimizer V1.3.4</strong> — Professional CV Generation Tool<br>
-            © 2025 All Rights Reserved
+            <strong>CV Optimizer V1.3.4</strong> — Outil professionnel de génération de CV<br>
+            © 2025 Tous droits réservés
         </div>
         """,
         unsafe_allow_html=True,
