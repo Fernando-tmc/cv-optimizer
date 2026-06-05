@@ -1328,6 +1328,22 @@ def generate_cv(data):
         success = True
         result = None
         
+        # 🧩 Skill matrix -> insérée en PAGE 2 (si fournie)
+        if st.session_state.get('skills_matrix_file'):
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                sm_in = st.session_state.skills_matrix_file
+                sm_suffix = Path(sm_in.name).suffix or '.docx'
+                sm_path = Path(output_path).parent / f"skillmatrix_{ts}{sm_suffix}"
+                with open(sm_path, 'wb') as f:
+                    sm_in.seek(0)
+                    f.write(sm_in.read())
+                merged_path = Path(output_path).parent / f"cv_merged_{ts}.docx"
+                enricher.insert_skills_matrix_page2(output_path, str(sm_path), str(merged_path))
+                output_path = str(merged_path)
+            except Exception as _sm_e:
+                st.warning(f"⚠️ Skill matrix non insérée (CV généré sans elle) : {_sm_e}")
+        
         timeline_placeholder.empty()
         
         if success:

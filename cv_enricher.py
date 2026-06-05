@@ -2039,6 +2039,72 @@ Return the corrected JSON directly:"""
         doc.save(output_path)
         print(f"✅ CV TMC généré avec succès!")
 
+    def insert_skills_matrix_page2(self, cv_path, matrix_path, output_path):
+        """Insere la skill matrix en PAGE 2 du CV (apres la page de garde, avant les details).
+        Compose : couverture + skill matrix + contenu. Insertion verbatim.
+        Convertit la matrice en .docx au besoin (via LibreOffice)."""
+        from docx import Document
+        from docxcompose.composer import Composer
+        from pathlib import Path
+        import subprocess
+        W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+
+        mp = Path(matrix_path)
+        if mp.suffix.lower() != '.docx':
+            print("   Conversion de la skill matrix en .docx...", flush=True)
+            subprocess.run(['soffice', '--headless', '--convert-to', 'docx', '--outdir',
+                            str(mp.parent), str(mp)], check=False, timeout=120,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            converted = mp.parent / (mp.stem + '.docx')
+            if not converted.exists():
+                raise RuntimeError("Impossible de convertir la skill matrix en .docx")
+            matrix_path = str(converted)
+
+        def page_break_index(body):
+            for i, el in enumerate(list(body)):
+                if el.tag == W + 'p' and el.findall('.//' + W + 'br[@' + W + 'type="page"]'):
+                    return i
+            return None
+
+        cover = Document(cv_path)
+        content = Document(cv_path)
+        body_c, body_d = cover.element.body, content.element.body
+        idx = page_break_index(body_c)
+        if idx is None:
+            idx = len(list(body_c))  # pas de page de garde : matrice tout en haut
+
+        # Couverture = elements AVANT le saut de page (le saut est porte par le 1er
+        # paragraphe de contenu, donc on s'arrete juste avant).
+        for el in list(body_c)[idx:]:
+            if el.tag == W + 'sectPr':
+                continue
+            body_c.remove(el)
+        # Forcer un saut de page a la fin de la couverture -> la matrice sera en page 2
+        cover.add_page_break()
+        # Contenu = a partir du saut de page (garde son pageBreakBefore -> page suivante)
+        for el in list(body_d)[:idx]:
+            body_d.remove(el)
+
+        matrix = Document(matrix_path)
+        bm = matrix.element.body
+        for el in list(bm):
+            tag = el.tag.split('}')[-1]
+            if tag == 'p':
+                txt = ''.join(t.text or '' for t in el.findall('.//' + W + 't'))
+                if not txt.strip():
+                    bm.remove(el)
+                else:
+                    break
+            else:
+                break
+
+        comp = Composer(cover)
+        comp.append(matrix)
+        comp.append(content)
+        comp.save(output_path)
+        print("Skill matrix inseree en page 2", flush=True)
+        return True
+
     def generate_ms_cv_3parts(self, tmc_context, skills_matrix_path, output_path, 
                               cover_template="TMC_NA_template_EN_Anonymise_CoverPage.docx",
                               content_template="TMC_NA_template_EN_Anonymise_Content.docx"):
