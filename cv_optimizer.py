@@ -592,6 +592,8 @@ if 'selected_client' not in st.session_state:
     st.session_state.selected_client = "Desjardins"
 if 'selected_language' not in st.session_state:
     st.session_state.selected_language = "French"
+if 'anonymized' not in st.session_state:
+    st.session_state.anonymized = False
 if 'cv_file' not in st.session_state:
     st.session_state.cv_file = None
 if 'jd_file' not in st.session_state:
@@ -732,35 +734,7 @@ def main_app():
     with st.sidebar:
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         
-        # Client selector
-        st.markdown("#### 🏢 Select Client")
-        
-        clients_list = list(CLIENT_DATA.keys())
-        client = st.selectbox(
-            "Client",
-            options=clients_list,
-            index=clients_list.index(st.session_state.selected_client),
-            label_visibility="collapsed",
-            key="client_select"
-        )
-        
-        if client != st.session_state.selected_client:
-            st.session_state.selected_client = client
-            st.session_state.matching_done = False
-            st.session_state.matching_data = None
-            st.session_state.skills_matrix_file = None
-            st.session_state.show_generate_button = False
-            st.rerun()
-        
-        client_info = CLIENT_DATA[st.session_state.selected_client]
-        rules_html = "<br>".join(client_info["rules"])
-        
-        st.markdown(f"""
-        <div class="client-card {client_info['card_class']}">
-            {rules_html}
-        </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("#### 🧰 CV Optimizer TMC")
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         
         st.markdown("""
@@ -830,75 +804,91 @@ def main_app():
     </div>
     """, unsafe_allow_html=True)
     
-    # Upload section
-    col1, col2 = st.columns(2)
-    
+    # ===== DRAG & DROP : CV (requis), JD (optionnel), Skill matrix (optionnel) =====
+    col1, col2, col3 = st.columns(3)
+
     with col1:
-        st.markdown("### 📄 Your Resume")
+        st.markdown("### 📄 CV  *(requis)*")
         cv_file = st.file_uploader(
-            "Upload your CV",
-            type=['pdf', 'docx', 'doc', 'txt'],
+            "CV", type=['pdf', 'docx', 'doc', 'txt'],
             label_visibility="collapsed",
             key=f"cv_uploader_{st.session_state.reset_counter}"
         )
         if cv_file:
-            if 'cv_upload_status' not in st.session_state:
-                st.session_state.cv_upload_status = st.empty()
-            st.session_state.cv_upload_status.success(f"✅ {cv_file.name}")
             st.session_state.cv_file = cv_file
-    
+            st.success(f"✅ {cv_file.name}")
+
     with col2:
-        st.markdown("### 📊 Job Description")
+        st.markdown("### 📊 Description de poste  *(optionnel)*")
         jd_file = st.file_uploader(
-            "Upload job description",
-            type=['txt', 'docx', 'doc', 'pdf'],
+            "JD", type=['txt', 'docx', 'doc', 'pdf'],
             label_visibility="collapsed",
             key=f"jd_uploader_{st.session_state.reset_counter}"
         )
         if jd_file:
-            if 'jd_upload_status' not in st.session_state:
-                st.session_state.jd_upload_status = st.empty()
-            st.session_state.jd_upload_status.success(f"✅ {jd_file.name}")
             st.session_state.jd_file = jd_file
-    
-    # Language section (only for CAE)
-    if CLIENT_DATA[st.session_state.selected_client]["show_language"]:
-        st.markdown("---")
-        st.markdown('<h3 style="text-align: center;">🌐 Generated CV Language</h3>', unsafe_allow_html=True)
-        language = st.radio(
-            "Select language",
-            options=["🇫🇷 French", "🇬🇧 English"],
-            horizontal=True,
+            st.success(f"✅ {jd_file.name}")
+
+    with col3:
+        st.markdown("### 🧩 Skill matrix  *(optionnel)*")
+        sm_file = st.file_uploader(
+            "Skill matrix", type=['docx', 'doc', 'pdf'],
             label_visibility="collapsed",
+            key=f"skills_matrix_uploader_{st.session_state.reset_counter}"
+        )
+        if sm_file:
+            st.session_state.skills_matrix_file = sm_file
+            st.success(f"✅ {sm_file.name}")
+
+    # ===== OPTIONS : langue (FR par défaut) + anonymisation (décoché par défaut) =====
+    st.markdown("---")
+    opt1, opt2 = st.columns(2)
+    with opt1:
+        st.markdown("**🌐 Langue du CV généré**")
+        language = st.radio(
+            "Langue", options=["🇫🇷 Français", "🇬🇧 English"],
+            index=0, horizontal=True, label_visibility="collapsed",
             key="language_selector"
         )
-        st.session_state.selected_language = language.split()[1]
-    else:
-        st.session_state.selected_language = CLIENT_DATA[st.session_state.selected_client]["language"]
-    
-    # Analyze button
-    if not st.session_state.show_generate_button:
-        st.markdown("---")
-        analyze_button = st.button(
-            "📊 Analyze Matching",
-            use_container_width=True,
-            disabled=st.session_state.processing,
-            key="analyze_button"
+        st.session_state.selected_language = "French" if "Français" in language else "English"
+    with opt2:
+        st.markdown("**🔒 Anonymisation**")
+        st.session_state.anonymized = st.checkbox(
+            "CV anonymisé", value=st.session_state.get('anonymized', False),
+            key="anonymized_checkbox"
         )
-        
-        if analyze_button:
-            if st.session_state.cv_file and st.session_state.jd_file:
-                if 'cv_upload_status' in st.session_state:
-                    st.session_state.cv_upload_status.empty()
-                if 'jd_upload_status' in st.session_state:
-                    st.session_state.jd_upload_status.empty()
-                
-                st.session_state.processing = True
-                process_cv_matching()
-            else:
-                st.error("⚠️ Please upload both CV and Job Description files")
-    
-    # Display results if matching is done
+
+    # ===== DEUX ACTIONS INDÉPENDANTES =====
+    st.markdown("---")
+    b1, b2 = st.columns(2)
+    with b1:
+        matching_btn = st.button(
+            "📊 Tableau de matching", use_container_width=True,
+            disabled=st.session_state.processing, key="matching_btn",
+            help="Nécessite un CV ET une description de poste"
+        )
+    with b2:
+        generate_btn = st.button(
+            "📄 CV converti TMC", use_container_width=True,
+            disabled=st.session_state.processing, key="generate_btn",
+            help="Nécessite au moins un CV (la description de poste est optionnelle)"
+        )
+
+    if matching_btn:
+        if st.session_state.cv_file and st.session_state.jd_file:
+            st.session_state.processing = True
+            process_cv_matching()
+        else:
+            st.error("⚠️ Le tableau de matching nécessite un CV ET une description de poste.")
+
+    if generate_btn:
+        if st.session_state.cv_file:
+            st.session_state.processing = True
+            process_cv_generation()
+        else:
+            st.error("⚠️ Veuillez d'abord déposer un CV.")
+
+    # Résultats du matching (si déjà calculé)
     if st.session_state.matching_done and st.session_state.matching_data:
         display_matching_results(st.session_state.matching_data)
 
@@ -1207,54 +1197,47 @@ def display_matching_results(data):
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Skills Matrix Upload Section (ONLY for Morgan Stanley)
-    if st.session_state.selected_client == "Morgan Stanley":
-        st.markdown("---")
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div style="text-align: center; margin-bottom: 15px;">
-            <strong style="color: #193E92; font-size: 1.15rem;">📊 Skills Matrix Upload (Required)</strong>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col_sm_left, col_sm_center, col_sm_right = st.columns([1, 2, 1])
-        with col_sm_center:
-            skills_matrix_file = st.file_uploader(
-                "Upload Skills Matrix (.docx only)",
-                type=['docx'],
-                key=f"skills_matrix_uploader_{st.session_state.reset_counter}",
-                help="Morgan Stanley requires a Skills Matrix as page 2 of the CV"
-            )
-            
-            if skills_matrix_file:
-                st.session_state.skills_matrix_file = skills_matrix_file
-                st.success(f"✅ Skills Matrix Uploaded: **{skills_matrix_file.name}**")
-            else:
-                if st.session_state.skills_matrix_file:
-                    st.info(f"✅ Skills Matrix Ready: **{st.session_state.skills_matrix_file.name}**")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Generate CV button
-    if st.button("📝 Generate Optimized CV", use_container_width=True, key="generate_cv_button"):
-        generate_cv(data)
+    st.info("➡️ Pour générer le CV au format TMC, utilise le bouton « 📄 CV converti TMC » en haut de la page.")
 
 # ==========================================
 # 📝 CV GENERATION
 # ==========================================
 
+def process_cv_generation():
+    """Parse le CV (+ JD optionnelle) puis génère le CV TMC (bouton 'CV converti TMC')."""
+    try:
+        from cv_enricher import CVEnricher
+        api_key = os.getenv('ANTHROPIC_API_KEY') or st.secrets.get("ANTHROPIC_API_KEY")
+        enricher = CVEnricher(api_key=api_key)
+        st.markdown("---")
+        st.info("⏳ Lecture et analyse du CV...")
+        cv_path = save_uploaded(st.session_state.cv_file)
+        cv_text = enricher.extract_cv_text(str(cv_path))
+        parsed_cv = enricher.parse_cv_with_claude(cv_text)
+        jd_text = ""
+        matching_analysis = None
+        if st.session_state.jd_file:
+            jd_path = save_uploaded(st.session_state.jd_file)
+            jd_text = enricher.read_job_description(str(jd_path))
+            matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text)
+        data = {
+            'parsed_cv': parsed_cv,
+            'jd_text': jd_text or "(Aucune description de poste fournie — reformate fidèlement le CV au format TMC, sans cibler d'offre.)",
+            'matching_analysis': matching_analysis,
+        }
+        st.session_state.processing = False
+        generate_cv(data)
+    except Exception as e:
+        st.session_state.processing = False
+        st.error(f"❌ Erreur : {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
 def generate_cv(data):
     """Generate the optimized CV with 3-step timeline"""
-    
-    if st.session_state.selected_client == "Morgan Stanley":
-        if not st.session_state.skills_matrix_file:
-            st.error("❌ **Skills Matrix is required for Morgan Stanley clients**")
-            st.error("📊 Please upload the Skills Matrix document before generating the CV.")
-            st.stop()
-    
     st.markdown("---")
-    st.markdown("## 📝 Generating Optimized CV")
+    st.markdown("## 📝 Génération du CV TMC")
     
     timeline_placeholder = st.empty()
     
@@ -1270,8 +1253,6 @@ def generate_cv(data):
         api_key = os.getenv('ANTHROPIC_API_KEY') or st.secrets.get("ANTHROPIC_API_KEY")
         enricher = CVEnricher(api_key=api_key)
         
-        client_config = CLIENT_DATA[st.session_state.selected_client]
-        
         timeline_placeholder.markdown(horizontal_progress_timeline(1, 3, generation_steps), unsafe_allow_html=True)
         
         enriched_cv = enricher.enrich_cv_with_prompt(
@@ -1281,45 +1262,27 @@ def generate_cv(data):
             matching_analysis=data.get('matching_analysis')
         )
         
-        tmc_context = enricher.map_to_tmc_structure(data['parsed_cv'], enriched_cv)
+        template_lang = 'EN' if st.session_state.selected_language == 'English' else 'FR'
+        tmc_context = enricher.map_to_tmc_structure(data['parsed_cv'], enriched_cv, template_lang=template_lang)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
             output_path = tmp_file.name
         
-        if client_config["use_skizmatrix"] and st.session_state.skills_matrix_file:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            skills_matrix_path = Path(output_path).parent / f"skills_matrix_{ts}.docx"
-            with open(skills_matrix_path, 'wb') as f:
-                st.session_state.skills_matrix_file.seek(0)
-                f.write(st.session_state.skills_matrix_file.read())
-            
-            success, result = enricher.generate_ms_cv_3parts(
-                tmc_context=tmc_context,
-                skills_matrix_path=str(skills_matrix_path),
-                output_path=output_path
-            )
-            
-            if success:
-                keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
-                if keywords:
-                    enricher.apply_bold_post_processing(output_path, keywords)
-        else:
-            if client_config["anonymize"]:
-                template_file = f"Template_{st.session_state.selected_language[:2].upper()}_Anonymise.docx"
-            else:
-                template_file = f"Template_{st.session_state.selected_language[:2].upper()}.docx"
-            
-            enricher.generate_tmc_docx(
-                tmc_context,
-                output_path,
-                template_path=template_file
-            )
-            
-            keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
-            if keywords:
-                enricher.apply_bold_post_processing(output_path, keywords)
-            
-            success = True
+        suffix = '_Anonymise' if st.session_state.get('anonymized', False) else ''
+        template_file = f"Template_{template_lang}{suffix}.docx"
+        
+        enricher.generate_tmc_docx(
+            tmc_context,
+            output_path,
+            template_path=template_file
+        )
+        
+        keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
+        if keywords:
+            enricher.apply_bold_post_processing(output_path, keywords)
+        
+        success = True
+        result = None
         
         timeline_placeholder.empty()
         
@@ -1346,18 +1309,10 @@ def generate_cv(data):
             
             titre_clean = re.sub(r'[^\w\s-]', '', titre).strip()
             
-            client = st.session_state.selected_client
             language = st.session_state.selected_language
-            
-            if client == "Desjardins":
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
-            elif client == "Morgan Stanley":
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
-            elif client == "CAE":
-                lang_suffix = "(EN)" if language == "English" else "(FR)"
-                filename = f"CV - {nom_formatted} - {titre_clean} {lang_suffix}.docx"
-            else:
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
+            lang_suffix = "(EN)" if language == "English" else "(FR)"
+            anon_suffix = " (Anonymise)" if st.session_state.get('anonymized', False) else ""
+            filename = f"CV - {nom_formatted} - {titre_clean} {lang_suffix}{anon_suffix}.docx"
             
             st.markdown("""
             <style>
