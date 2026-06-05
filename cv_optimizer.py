@@ -863,30 +863,37 @@ def main_app():
     b1, b2 = st.columns(2)
     with b1:
         matching_btn = st.button(
-            "📊 Tableau de matching", use_container_width=True,
-            disabled=st.session_state.processing, key="matching_btn",
+            "📊 Tableau de matching", use_container_width=True, key="matching_btn",
             help="Nécessite un CV ET une description de poste"
         )
     with b2:
         generate_btn = st.button(
-            "📄 CV converti TMC", use_container_width=True,
-            disabled=st.session_state.processing, key="generate_btn",
+            "📄 CV converti TMC", use_container_width=True, key="generate_btn",
             help="Nécessite au moins un CV (la description de poste est optionnelle)"
         )
 
+    # Le clic positionne un drapeau ; le traitement se lance juste apres avec un
+    # retour visuel immediat (spinner) -> plus besoin de cliquer plusieurs fois.
     if matching_btn:
         if st.session_state.cv_file and st.session_state.jd_file:
-            st.session_state.processing = True
-            process_cv_matching()
+            st.session_state.run_matching = True
         else:
             st.error("⚠️ Le tableau de matching nécessite un CV ET une description de poste.")
-
     if generate_btn:
         if st.session_state.cv_file:
-            st.session_state.processing = True
-            process_cv_generation()
+            st.session_state.run_generate = True
         else:
             st.error("⚠️ Veuillez d'abord déposer un CV.")
+
+    if st.session_state.get('run_matching'):
+        st.session_state.run_matching = False
+        with st.spinner("📊 Analyse du matching en cours…"):
+            process_cv_matching()
+
+    if st.session_state.get('run_generate'):
+        st.session_state.run_generate = False
+        with st.spinner("📝 Génération du CV en cours… (30–60 s, merci de patienter)"):
+            process_cv_generation()
 
     # Résultats du matching (si déjà calculé)
     if st.session_state.matching_done and st.session_state.matching_data:
