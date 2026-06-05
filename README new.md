@@ -11,6 +11,16 @@ Advanced CV generation platform featuring intelligent matching analysis, OCR sup
 
 ---
 
+## 🛠️ Maintenance & Contact
+
+> **Solution améliorée en juin 2026.**
+> Refonte et corrections apportées : suppression du fonctionnement par client (Morgan Stanley / Desjardins / CAE) au profit d'une interface à dépôts (CV, description de poste, skill matrix) avec choix de langue (FR/EN) et option d'anonymisation ; correction de la génération des CV (compétences enfin visibles, mise en page sans chevauchement, certifications, apostrophes/&, suppression des « Not specified ») ; amélioration de la qualité IA (anti-hallucination, ton sobre, reformulation) ; insertion de la skill matrix en page 2 ; tableau de matching téléchargeable.
+
+> **Pour toute question, contacter :**
+> **Aymeric Lefébure — TMC Montréal**
+
+---
+
 ## ✨ Core Features
 
 ### 📄 Universal Document Processing
