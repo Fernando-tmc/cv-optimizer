@@ -1082,68 +1082,31 @@ def display_matching_results(data):
                 icon = "✅"
             return f"{icon} {row['domaine']}"
         
-        df_domaines['Domain'] = df_domaines.apply(format_domain, axis=1)
-        df_domaines['Weight'] = df_domaines['poids'].astype(str) + '%'
-        df_domaines['Score'] = df_domaines.apply(
-            lambda row: f"{row['score']}/{row['score_max']}", axis=1
-        )
-        
-        def truncate(text, max_len=150):
-            if len(text) <= max_len:
-                return text
-            text = text[:max_len]
-            last_space = text.rfind(' ')
-            if last_space > 0:
-                text = text[:last_space]
-            if text and text[-1] not in '.!?':
-                text += '.'
-            return text
-        
-        df_domaines['Comment'] = df_domaines['commentaire'].apply(truncate)
-        df_display = df_domaines[['Domain', 'Weight', 'Score', 'Comment']]
+        df_domaines['Domaine'] = df_domaines.apply(format_domain, axis=1)
+        df_domaines['Commentaire'] = df_domaines['commentaire']  # texte COMPLET (pas de troncature)
+        df_display = df_domaines[['Domaine', 'Commentaire']]
         
         def style_rows(row):
-            idx = row.name
-            match = df_domaines.loc[idx, 'match']
-            
-            if match == 'incompatible':
-                bg = '#fef2f2'
-            elif match == 'partiel':
-                bg = '#fffbeb'
-            else:
-                bg = '#f0fdf4'
-            
-            return [f'background-color: {bg}'] * len(row)
+            match = df_domaines.loc[row.name, 'match']
+            bg = '#fef2f2' if match == 'incompatible' else ('#fffbeb' if match == 'partiel' else '#f0fdf4')
+            return [f'background-color: {bg}; vertical-align: top'] * len(row)
         
-        styled_df = df_display.style.apply(style_rows, axis=1)
-        
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Domain": st.column_config.TextColumn(
-                    "Domain",
-                    width=400,
-                    help="Technical/functional domain"
-                ),
-                "Weight": st.column_config.TextColumn(
-                    "Weight",
-                    width=70,
-                    help="Importance weight (%)"
-                ),
-                "Score": st.column_config.TextColumn(
-                    "Score",
-                    width=70,
-                    help="Candidate score"
-                ),
-                "Comment": st.column_config.TextColumn(
-                    "Comment",
-                    width=None,
-                    help="Detailed assessment"
-                ),
-            }
-        )
+        # st.table affiche le commentaire EN ENTIER (retour a la ligne) et se copie-colle bien.
+        try:
+            styled_df = (
+                df_display.style
+                .apply(style_rows, axis=1)
+                .set_properties(subset=['Commentaire'], **{'white-space': 'normal', 'text-align': 'left'})
+                .set_properties(subset=['Domaine'], **{'white-space': 'normal', 'font-weight': '600'})
+            )
+            try:
+                styled_df = styled_df.hide(axis='index')
+            except Exception:
+                pass
+            st.table(styled_df)
+        except Exception:
+            # repli : tableau simple sans couleurs (toujours complet et copiable)
+            st.table(df_display.reset_index(drop=True))
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -1250,19 +1213,6 @@ def display_matching_results(data):
     st.markdown("<br>", unsafe_allow_html=True)
     
     st.markdown("---")
-    try:
-        report_bytes = build_matching_report_docx(results, parsed_cv)
-        nom_dl = (parsed_cv.get('nom_complet') or 'Candidat').strip()
-        st.download_button(
-            "📥 Télécharger le tableau de matching",
-            data=report_bytes,
-            file_name=f"Matching - {nom_dl}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-            key="download_matching_btn"
-        )
-    except Exception as e:
-        st.warning(f"Export du tableau indisponible : {e}")
     st.info("➡️ Pour générer le CV au format TMC, utilise le bouton « 📄 CV converti TMC » en haut de la page.")
 
 # ==========================================
