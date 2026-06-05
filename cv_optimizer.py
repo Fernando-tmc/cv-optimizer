@@ -1339,7 +1339,7 @@ def generate_cv(data):
                     sm_in.seek(0)
                     f.write(sm_in.read())
                 merged_path = Path(output_path).parent / f"cv_merged_{ts}.docx"
-                enricher.insert_skills_matrix_page2(output_path, str(sm_path), str(merged_path))
+                enricher.insert_skills_matrix_page2(output_path, str(sm_path), str(merged_path), target_language=st.session_state.selected_language)
                 output_path = str(merged_path)
             except Exception as _sm_e:
                 st.warning(f"⚠️ Skill matrix non insérée (CV généré sans elle) : {_sm_e}")

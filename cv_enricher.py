@@ -2039,7 +2039,52 @@ Return the corrected JSON directly:"""
         doc.save(output_path)
         print(f"✅ CV TMC généré avec succès!")
 
-    def insert_skills_matrix_page2(self, cv_path, matrix_path, output_path):
+    def _translate_matrix_if_needed(self, matrix, target_language):
+        """Traduit le contenu de la skill matrix vers target_language si besoin.
+        Les textes deja dans la bonne langue sont gardes tels quels. Repli silencieux."""
+        import json, re
+        paras = []
+        for tbl in matrix.tables:
+            for row in tbl.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        if para.text.strip():
+                            paras.append(para)
+        for para in matrix.paragraphs:
+            if para.text.strip():
+                paras.append(para)
+        texts = [p.text for p in paras]
+        if not texts:
+            return
+        client = self._get_anthropic_client()
+        prompt = (
+            "Voici des courts textes extraits d'une grille de competences (skills matrix).\n"
+            "Traduis CHAQUE texte en " + target_language + ". Si un texte est DEJA en " + target_language +
+            ", renvoie-le INCHANGE. Style professionnel et concis. Ne traduis PAS les noms propres, "
+            "technologies et acronymes (ex: CRM, SAP, BPMN, SQL, Salesforce, CISCO, UX, ERP, SAC).\n"
+            "Reponds UNIQUEMENT avec un tableau JSON de chaines, de MEME longueur et MEME ordre que l'entree, sans markdown.\n\n"
+            "TEXTES (JSON): " + json.dumps(texts, ensure_ascii=False)
+        )
+        resp = client.messages.create(
+            model="claude-sonnet-4-5-20250929", max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        m = re.search(r"\[.*\]", raw, re.S)
+        translated = json.loads(m.group(0)) if m else None
+        if not translated or len(translated) != len(paras):
+            print("   Traduction matrice ignoree (format inattendu) -> verbatim", flush=True)
+            return
+        for para, newtxt in zip(paras, translated):
+            if para.runs:
+                para.runs[0].text = newtxt
+                for r in para.runs[1:]:
+                    r.text = ''
+            else:
+                para.add_run(newtxt)
+        print("   Skill matrix traduite vers " + target_language, flush=True)
+
+    def insert_skills_matrix_page2(self, cv_path, matrix_path, output_path, target_language=None):
         """Insere la skill matrix en PAGE 2 du CV (apres la page de garde, avant les details).
         Compose : couverture + skill matrix + contenu. Insertion verbatim.
         Convertit la matrice en .docx au besoin (via LibreOffice)."""
@@ -2086,6 +2131,61 @@ Return the corrected JSON directly:"""
             body_d.remove(el)
 
         matrix = Document(matrix_path)
+        # Traduire si la langue de la matrice differe de la langue cible
+        if target_language:
+            try:
+                self._translate_matrix_if_needed(matrix, target_language)
+            except Exception as _tr_e:
+                print("   Traduction matrice echouee (" + str(_tr_e) + ") -> verbatim", flush=True)
+        # Eviter le debordement horizontal des tableaux larges (checklists)
+        try:
+            fix_table_width_to_auto(matrix)
+        except Exception:
+            pass
+        # Aligner les marges de la matrice sur celles du CV
+        try:
+            cv_sec = cover.sections[0]
+            for sec in matrix.sections:
+                sec.top_margin = cv_sec.top_margin
+                sec.bottom_margin = cv_sec.bottom_margin
+                sec.left_margin = cv_sec.left_margin
+                sec.right_margin = cv_sec.right_margin
+                sec.orientation = cv_sec.orientation
+                sec.page_width = cv_sec.page_width
+                sec.page_height = cv_sec.page_height
+        except Exception:
+            pass
+        # Mettre les tableaux larges a l'echelle de la largeur utile du CV (evite le debordement)
+        try:
+            from docx.oxml.ns import qn as _qn
+            from docx.oxml import OxmlElement as _Ox
+            cv_sec = cover.sections[0]
+            target = int((cv_sec.page_width - cv_sec.left_margin - cv_sec.right_margin) / 635)  # EMU -> twips
+            for tbl in matrix.tables:
+                tblel = tbl._tbl
+                grid = tblel.find(_qn('w:tblGrid'))
+                cols = grid.findall(_qn('w:gridCol')) if grid is not None else []
+                total = sum(int(c.get(_qn('w:w')) or 0) for c in cols)
+                if total <= target or total <= 0:
+                    continue
+                f = target / total
+                for c in cols:
+                    c.set(_qn('w:w'), str(max(1, int(int(c.get(_qn('w:w')) or 0) * f))))
+                for tcW in tblel.iter(_qn('w:tcW')):
+                    if tcW.get(_qn('w:type')) == 'dxa':
+                        tcW.set(_qn('w:w'), str(max(1, int(int(tcW.get(_qn('w:w')) or 0) * f))))
+                tblPr = tblel.find(_qn('w:tblPr'))
+                if tblPr is not None:
+                    tblW = tblPr.find(_qn('w:tblW'))
+                    if tblW is None:
+                        tblW = _Ox('w:tblW'); tblPr.append(tblW)
+                    tblW.set(_qn('w:type'), 'dxa'); tblW.set(_qn('w:w'), str(target))
+                    layout = tblPr.find(_qn('w:tblLayout'))
+                    if layout is None:
+                        layout = _Ox('w:tblLayout'); tblPr.append(layout)
+                    layout.set(_qn('w:type'), 'fixed')
+        except Exception:
+            pass
         bm = matrix.element.body
         for el in list(bm):
             tag = el.tag.split('}')[-1]
