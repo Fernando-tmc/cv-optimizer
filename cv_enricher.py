@@ -356,8 +356,8 @@ Extrait et structure en JSON STRICT (sans markdown):
     {{
       "diplome": "Nom COMPLET du diplôme",
       "institution": "Nom école/université",
-      "annee": "2020 (ou période exacte)",
-      "pays": "Canada"
+      "annee": "2020 (ou période exacte, sinon laisse vide)",
+      "pays": "Pays SEULEMENT s'il est explicitement écrit dans le CV, sinon chaîne vide \"\". Ne JAMAIS inventer ni mettre Canada par défaut."
     }}
   ],
   "certifications": [
@@ -437,7 +437,7 @@ RÈGLES CRITIQUES:
         else:
             return self.extract_from_txt(jd_path)
     
-    def analyze_cv_matching(self, parsed_cv: Dict[str, Any], jd_text: str) -> Dict[str, Any]:
+    def analyze_cv_matching(self, parsed_cv: Dict[str, Any], jd_text: str, language: str = "French") -> Dict[str, Any]:
         """
         Analyser le matching entre CV et JD sans enrichir le contenu.
         Retourne uniquement: score_matching, domaines_analyses, synthese_matching
@@ -712,10 +712,9 @@ Retourne UNIQUEMENT un JSON avec cette structure (sans texte avant/après):
 - Commentaire: minimum 2-3 phrases complètes avec détails factuels précis du CV
 - Synthèse: MAXIMUM 4-5 lignes (80-100 mots), format executive summary
 
-⚠️ LANGUE: ALL output must be in ENGLISH.
-- Domain names in English (e.g., "Python Backend Development", not "Développement Backend Python")
-- All comments in English
-- Synthesis in English (4-5 lines max)
+⚠️ LANGUE DE SORTIE: TOUT le texte (noms de domaines, commentaires, synthèse) doit être rédigé en {language}.
+- Si {language} = "French": noms de domaines, commentaires et synthèse 100% en français.
+- Si {language} = "English": domain names, comments and synthesis 100% in English.
 
 Génère l'analyse maintenant:"""
             
@@ -1082,25 +1081,34 @@ Si UNE SEULE phrase n'est pas en {language} → RECOMMENCE TOUT.
                 # ============================================
                 prompt = f"""Voici la job description et le CV actuel ci-dessous.
 
-🔹 Améliore le CV pour qu'il soit parfaitement aligné avec la job description tout en gardant le format d'origine (titres, mise en page, structure, ton professionnel).
+🔹 Reformate et reformule LÉGÈREMENT le CV ci-dessous au format TMC, en gardant un ton professionnel sobre.
 {language_instruction}
 
-⚠️ IMPORTANT: L'analyse de matching a DÉJÀ été faite. Tu dois UNIQUEMENT faire l'ENRICHISSEMENT du contenu.
+🚫🚫 RÈGLE N°1 — FIDÉLITÉ ABSOLUE, ZÉRO INVENTION (prime sur tout le reste) 🚫🚫
+- Utilise UNIQUEMENT des informations RÉELLEMENT présentes dans le CV source ci-dessous.
+- INTERDIT d'ajouter une compétence, technologie, outil, chiffre, résultat ou responsabilité absent du CV.
+- INTERDIT de "compléter" avec des mots-clés de la Job Description que le candidat n'a pas. La JD sert SEULEMENT à choisir quels éléments VRAIS du CV mettre en avant et dans quel ordre — JAMAIS à ajouter ce qui est absent.
+- Si une info n'est pas dans le CV (résultat chiffré, outil...), NE L'INVENTE PAS.
+- En cas de doute : ne le mets pas.
+
+🎙️ TON — sobre et factuel (surtout PAS "IA"/marketing) :
+- Style professionnel neutre, comme un consultant le rédigerait.
+- INTERDIT : superlatifs/formules marketing ("exceptionnel", "expert reconnu", "passionné", "maîtrise parfaite", "solide expérience", "dynamique"...).
+- Phrases simples et directes, sans emphase artificielle.
+
+⚠️ L'analyse de matching est DÉJÀ faite. Tu fais UNIQUEMENT la reformulation fidèle du contenu.
 
 Fais :
 
-1. Une version réécrite et enrichie du CV
+1. TITRE court en {language} (3-5 mots max), basé sur le VRAI métier du candidat (orienté JD seulement si ça reste vrai).
 
-2a. TITRE: TITRE COURT adapté à la JD en {language} (3-5 mots max)
+2. PROFIL: paragraphe factuel de 4-5 lignes en {language}, reformulant le profil RÉEL (pas de superlatifs). 3-5 technologies réellement maîtrisées en **gras**.
 
-2b. PROFIL exceptionnel : écris un paragraphe NARRATIF fluide (pas de liste), 5-6 lignes avec progression logique.
-
-2c. GRAS ULTRA-SÉLECTIF : identifie UNIQUEMENT 3-5 technologies CRITIQUES.
-
-3. Intègre naturellement les mots-clés techniques de la JD
-4. Ajuste les intitulés pour que le profil paraisse livrable immédiatement
-5. N'invente rien — reformule uniquement les éléments présents
-6. EXPÉRIENCES : bullets courts (1 ligne max), maximum 5-6 bullets par expérience
+3. EXPÉRIENCES — reformulation LÉGÈRE (jamais de copié-collé mot à mot, jamais d'invention) :
+   - Style NOMINAL uniforme : chaque ligne commence par un nom d'action ("Conception de…", "Réalisation de…", "Développement de…", "Migration de…", "Analyse de…").
+   - JAMAIS à la 1re personne ("j'ai…"), JAMAIS à l'infinitif en tête ("Réaliser…").
+   - Mêmes FAITS que le CV source, juste mieux formulés et homogènes.
+   - Bullets courts (1 ligne), 4-6 par expérience max.
 
 Réponds en JSON STRICT (sans markdown) avec cette structure:
 {{
@@ -1108,12 +1116,12 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   
   "profil_enrichi": "Profil NARRATIF 5-6 lignes en {language} avec **3-5 technologies clés** en gras",
   
-  "mots_cles_a_mettre_en_gras": ["Liste 15-20 TECHNOLOGIES de la JD - PAS de verbes génériques"],
+  "mots_cles_a_mettre_en_gras": ["Technologies RÉELLEMENT présentes dans le CV (recoupant éventuellement la JD) - PAS de technos absentes du CV"],
   
   "competences_enrichies": {{
     "Nom Catégorie 1 (3-6 mots max)": [
-      "**Technologie principale** : description en 2-3 lignes (MAXIMUM 100-150 caractères) incluant contexte, outils associés (**outil1**, **outil2**) et résultats. Style concis et percutant.",
-      "**Autre technologie** : description COURTE avec contexte + outils (**tech1**, **tech2**) + impact. 2-3 technologies en **gras** par compétence."
+      "**Compétence réelle** : description courte (100-150 caractères max) UNIQUEMENT à partir de ce qui figure dans le CV. N'ajoute aucun outil ni résultat absent du CV.",
+      "**Autre compétence réelle** : description factuelle et concise, sans invention."
     ],
     "Nom Catégorie 2": [
       "Compétence concise..."
@@ -1125,16 +1133,15 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   - 5-6 catégories ADAPTÉES à la JD
   - Chaque catégorie: 3-5 compétences MAXIMUM
   - CHAQUE compétence : 2-3 LIGNES MAXIMUM (100-150 caractères) - NE PAS DÉPASSER
-  - Format: "**Technologie** : description concise avec outils (**outil1**, **outil2**) + résultats"
-  - 2-3 technologies en **gras** par compétence (PAS PLUS)
-  - Descriptions CONCISES, CLAIRES et PROFESSIONNELLES
-  - Privilégier CLARTÉ et CONCISION sur la longueur
+  - N'inclus QUE des compétences réellement présentes dans le CV. AUCUNE compétence inventée, même si la JD la demande.
+  - Descriptions factuelles et sobres, sans superlatifs ni résultats chiffrés inventés
+  - 1-3 technologies RÉELLES en **gras** par compétence
   
   "experiences_enrichies": [
     {{
       "periode": "2020-2023",
       "entreprise": "Nom entreprise",
-      "poste": "Titre reformulé selon JD",
+      "poste": "Titre RÉEL du poste (reformulé seulement si fidèle)",
       "responsabilites": [
         "Configuration **Open edX** incluant structuration et intégration avec **SharePoint** pour gestion contenus",
         "Automatisation processus documentaires via **Power Automate** et **Teams** pour améliorer efficacité"
@@ -1192,8 +1199,14 @@ Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
                 # ============================================
                 prompt = f"""Voici la job description et le CV actuel ci-dessous.
 
-🔹 Améliore le CV pour qu'il soit parfaitement aligné avec la job description tout en gardant le format d'origine (titres, mise en page, structure, ton professionnel).
+🔹 Reformate et reformule LÉGÈREMENT le CV au format TMC, ton professionnel sobre.
 {language_instruction}
+
+🚫🚫 RÈGLE N°1 — FIDÉLITÉ ABSOLUE, ZÉRO INVENTION (prime sur tout) 🚫🚫
+- Utilise UNIQUEMENT ce qui est RÉELLEMENT dans le CV source. INTERDIT d'ajouter compétence, techno, outil, chiffre ou résultat absent du CV.
+- La JD sert à choisir quels éléments VRAIS mettre en avant, JAMAIS à ajouter ce que le candidat n'a pas.
+- Ton sobre/factuel : INTERDIT les superlatifs et formules marketing ("exceptionnel", "expert reconnu", "passionné"...).
+- Expériences : style NOMINAL ("Conception de…", "Réalisation de…"), jamais à la 1re personne, jamais d'invention.
 
 🎯 ANALYSE DE MATCHING PONDÉRÉE (ULTRA-CRITIQUE - COHÉRENCE ABSOLUE REQUISE):
 
@@ -1336,16 +1349,15 @@ RECOMMENDATION: This profile requires major reconversion and is NOT recommended 
 Fais :
 
 1. ANALYSE PONDÉRÉE OBLIGATOIRE (voir ci-dessus)
-2. Une version réécrite et enrichie du CV
+2. Une version reformatée et LÉGÈREMENT reformulée du CV (zéro invention)
 
-2b. PROFIL exceptionnel : écris un paragraphe NARRATIF fluide (pas de liste), 5-6 lignes avec progression logique.
+2b. PROFIL factuel : paragraphe de 4-5 lignes, profil RÉEL du candidat, sans superlatifs. 3-5 technologies réelles en **gras**.
 
-2c. GRAS ULTRA-SÉLECTIF : identifie UNIQUEMENT 3-5 technologies CRITIQUES.
+2c. GRAS ULTRA-SÉLECTIF : 3-5 technologies CRITIQUES réellement maîtrisées.
 
-3. Intègre naturellement les mots-clés techniques de la JD
-4. Ajuste les intitulés pour que le profil paraisse livrable immédiatement
-5. N'invente rien — reformule uniquement les éléments présents
-6. EXPÉRIENCES : bullets courts (1 ligne max), maximum 5-6 bullets par expérience
+3. N'ajoute AUCUN mot-clé de la JD que le candidat n'a pas (zéro invention)
+4. Garde les intitulés fidèles à la réalité
+5. EXPÉRIENCES : style NOMINAL uniforme ("Conception de…", "Réalisation de…"), jamais à la 1re personne ni à l'infinitif ; mêmes faits que le CV, bullets courts (1 ligne), 4-6 max
 
 Réponds en JSON STRICT (sans markdown) avec cette structure:
 {{
@@ -1376,12 +1388,12 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   
   "profil_enrichi": "Profil NARRATIF 5-6 lignes en {language} avec **3-5 technologies clés** en gras",
   
-  "mots_cles_a_mettre_en_gras": ["Liste 15-20 TECHNOLOGIES de la JD - PAS de verbes génériques"],
+  "mots_cles_a_mettre_en_gras": ["Technologies RÉELLEMENT présentes dans le CV (recoupant éventuellement la JD) - PAS de technos absentes du CV"],
   
   "competences_enrichies": {{
     "Nom Catégorie 1 (3-6 mots max)": [
-      "**Technologie principale** : description en 2-3 lignes (MAXIMUM 100-150 caractères) incluant contexte, outils associés (**outil1**, **outil2**) et résultats. Style concis et percutant.",
-      "**Autre technologie** : description COURTE avec contexte + outils (**tech1**, **tech2**) + impact. 2-3 technologies en **gras** par compétence."
+      "**Compétence réelle** : description courte (100-150 caractères max) UNIQUEMENT à partir de ce qui figure dans le CV. N'ajoute aucun outil ni résultat absent du CV.",
+      "**Autre compétence réelle** : description factuelle et concise, sans invention."
     ],
     "Nom Catégorie 2": [
       "Compétence concise..."
@@ -1393,16 +1405,15 @@ Réponds en JSON STRICT (sans markdown) avec cette structure:
   - 5-6 catégories ADAPTÉES à la JD
   - Chaque catégorie: 3-5 compétences MAXIMUM
   - CHAQUE compétence : 2-3 LIGNES MAXIMUM (100-150 caractères) - NE PAS DÉPASSER
-  - Format: "**Technologie** : description concise avec outils (**outil1**, **outil2**) + résultats"
-  - 2-3 technologies en **gras** par compétence (PAS PLUS)
-  - Descriptions CONCISES, CLAIRES et PROFESSIONNELLES
-  - Privilégier CLARTÉ et CONCISION sur la longueur
+  - N'inclus QUE des compétences réellement présentes dans le CV. AUCUNE compétence inventée, même si la JD la demande.
+  - Descriptions factuelles et sobres, sans superlatifs ni résultats chiffrés inventés
+  - 1-3 technologies RÉELLES en **gras** par compétence
   
   "experiences_enrichies": [
     {{
       "periode": "2020-2023",
       "entreprise": "Nom entreprise",
-      "poste": "Titre reformulé selon JD",
+      "poste": "Titre RÉEL du poste (reformulé seulement si fidèle)",
       "responsabilites": [
         "Configuration **Open edX** incluant structuration et intégration avec **SharePoint** pour gestion contenus",
         "Automatisation processus documentaires via **Power Automate** et **Teams** pour améliorer efficacité"
@@ -1719,6 +1730,21 @@ Return the corrected JSON directly:"""
     def map_to_tmc_structure(self, parsed_cv: Dict[str, Any], enriched_cv: Dict[str, Any], template_lang: str = 'FR') -> Dict[str, Any]:
         """Mapper les données enrichies vers la structure TMC"""
         print("🗺️  Mapping vers structure TMC...")
+
+        # 🔧 DÉCODAGE À LA SOURCE : on neutralise toute entité HTML héritée du modèle
+        #    (&amp;, &#x27;, &gt;, ...) AVANT de construire RichText et le contexte.
+        #    L'échappement XML final (une seule fois) est fait dans generate_tmc_docx.
+        import html as _html_src
+        def _deep_unescape(o):
+            if isinstance(o, str):
+                return _html_src.unescape(o)
+            if isinstance(o, dict):
+                return {k: _deep_unescape(v) for k, v in o.items()}
+            if isinstance(o, list):
+                return [_deep_unescape(x) for x in o]
+            return o
+        parsed_cv = _deep_unescape(parsed_cv)
+        enriched_cv = _deep_unescape(enriched_cv)
         
         # 1. PROFIL - Convertir en RichText pour supporter le gras (pas d'échappement)
         profil_brut = enriched_cv.get('profil_enrichi', parsed_cv.get('profil_resume', ''))
@@ -1746,7 +1772,7 @@ Return the corrected JSON directly:"""
         for cat, skills in skills_categorized.items():
             rt_cat = RichText()
             rt_cat.add(cat, bold=True)
-            rt_skills = [self.mdbold_to_richtext(s) for s in skills]
+            rt_skills = [self.mdbold_to_richtext(s) for s in skills if s and str(s).strip()]
             skills_categorized_doc.append((rt_cat, rt_skills))
         
         # 3. EXPÉRIENCES - Texte simple pour les responsabilités, RichText pour environnement
@@ -1755,7 +1781,7 @@ Return the corrected JSON directly:"""
         
         for exp in experiences_enrichies:
             # GARDER les responsabilités en TEXTE SIMPLE (pas RichText) - pas d'échappement
-            responsabilites_text = [r for r in exp.get('responsabilites', [])]
+            responsabilites_text = [r for r in exp.get('responsabilites', []) if r and str(r).strip()]
             
             # Convertir l'environnement en RichText pour le gras - pas d'échappement
             environment_brut = exp.get('environment', '')
@@ -1771,30 +1797,47 @@ Return the corrected JSON directly:"""
             work_experience.append(work_exp)
         
         # 5. CERTIFICATIONS (avec mapping vers format template)
+        # 🧹 Nettoyage : on n'affiche JAMAIS "Not specified" / "Date inconnue" / etc.
+        #    Un champ manquant devient une chaîne vide (rien ne s'affiche à la place).
+        _JUNK_VALUES = {
+            'not specified', 'non spécifié', 'non specifie', 'not specify',
+            'date inconnue', 'inconnu', 'inconnue', 'unknown',
+            'n/a', 'na', 'none', 'null', ''
+        }
+        def _clean_field(v):
+            v = '' if v is None else str(v).strip()
+            return '' if v.lower() in _JUNK_VALUES else v
+
         certifications_raw = parsed_cv.get('certifications', [])
         certifications = []
         for cert in certifications_raw:
+            _cn = _clean_field(cert.get('nom', cert.get('name', '')))
+            _ci = _clean_field(cert.get('organisme', cert.get('institution', '')))
+            _cy = _clean_field(cert.get('annee', cert.get('year', '')))
+            _cc = _clean_field(cert.get('pays', cert.get('country', '')))
+            # Ligne affichée : Nom │ Organisme │ Année — les champs vides (et leur
+            # séparateur) sont simplement omis. Le pays n'est plus affiché.
+            _cert_line = ' │ '.join([p for p in [_cn, _ci, _cy] if p])
             certifications.append({
-                'name': cert.get('nom', cert.get('name', '')),
-                'institution': cert.get('organisme', cert.get('institution', '')),
-                'year': str(cert.get('annee', cert.get('year', ''))),
-                'country': cert.get('pays', cert.get('country', ''))
+                'name': _cn, 'institution': _ci, 'year': _cy, 'country': _cc,
+                'line': _cert_line,
             })
         
-        # 6. PROJETS - ✅ FIX: Utiliser les projets enrichis (traduits) au lieu des bruts
-        projects = enriched_cv.get('projets_enrichis', parsed_cv.get('projets', []))
+        # 6. PROJETS - ❌ Section "Projets pertinents" retirée (demande Aymeric, juin 2026)
+        #    Le template masque automatiquement titre + contenu quand la liste est vide.
+        projects = []
         
         # ✅ FIX: Ajouter formation enrichie (traduite)
         formation_enrichie = enriched_cv.get('formation_enrichie', parsed_cv.get('formation', []))
         education = []
         for form in formation_enrichie:
             education.append({
-                'institution': form.get('institution', ''),
-                'degree': form.get('diplome', ''),
-                'graduation_year': form.get('annee', 'Date inconnue'),
-                'country': form.get('pays', 'Canada'),
+                'institution': _clean_field(form.get('institution', '')),
+                'degree': _clean_field(form.get('diplome', '')),
+                'graduation_year': _clean_field(form.get('annee', '')),
+                'country': _clean_field(form.get('pays', '')),
                 'level': '',
-                'title': form.get('diplome', '')
+                'title': _clean_field(form.get('diplome', ''))
             })
         
         # 7. INFORMATIONS PERSONNELLES
@@ -1946,51 +1989,45 @@ Return the corrected JSON directly:"""
         # 🔥 Ajouter la fonction r pour RichText dans le contexte
         context['r'] = lambda x: x
         
-        # ⚠️ CORRECTION XML : Échapper les caractères spéciaux (®, &, <, >, etc.)
-        from html import escape as html_escape
-        print(f"   🔧 Échappement des caractères XML spéciaux...")
-        
-        # Échapper les champs texte simples
-        for key in ['first_name', 'last_name', 'title', 'FIRST_NAME', 'LAST_NAME', 
-                   'TITLE', 'residency', 'RESIDENCY', 'languages', 'LANGUAGES']:
-            if key in context and isinstance(context[key], str):
-                context[key] = html_escape(context[key])
-        
-        # Échapper les expériences
-        if 'work_experience' in context:
-            for exp in context['work_experience']:
-                for key in ['period', 'company', 'position']:
-                    if key in exp and isinstance(exp[key], str):
-                        exp[key] = html_escape(exp[key])
-                
-                if 'general_responsibilities' in exp and isinstance(exp['general_responsibilities'], list):
-                    exp['general_responsibilities'] = [
-                        html_escape(r) if isinstance(r, str) else r
-                        for r in exp['general_responsibilities']
-                    ]
-        
-        # Échapper formations
-        if 'education' in context:
-            for edu in context['education']:
-                for key in ['institution', 'degree', 'graduation_year', 'country', 'level', 'title']:
-                    if key in edu and isinstance(edu[key], str):
-                        edu[key] = html_escape(edu[key])
-        
-        # Échapper certifications
-        if 'certifications' in context:
-            for cert in context['certifications']:
-                for key in ['name', 'institution', 'year', 'country']:
-                    if key in cert and isinstance(cert[key], str):
-                        cert[key] = html_escape(cert[key])
-        
-        # Échapper projets
-        if 'projects' in context:
-            for proj in context['projects']:
-                for key in ['nom', 'description']:
-                    if key in proj and isinstance(proj[key], str):
-                        proj[key] = html_escape(proj[key])
-        
-        print(f"   ✅ Caractères XML échappés (®, &, <, >, etc.)")
+        # 🔧 ÉCHAPPEMENT XML — UNE SEULE FOIS (les entités ont été décodées à la source)
+        # L\'environnement Jinja passé à docxtpl n\'auto-échappe PAS : les champs texte
+        # simples doivent donc être rendus valides en XML (&, <, >). Comme les entités
+        # héritées du modèle ont déjà été décodées dans map_to_tmc_structure, on échappe
+        # ICI une seule fois -> fini les "&amp;" et "&#x27;" en double. quote=False garde
+        # les apostrophes intactes. Les champs RichText (profil, compétences, environnement)
+        # gèrent leur propre échappement et ne sont PAS retouchés ici.
+        from html import escape as _xml_escape
+        def _xs(v):
+            return _xml_escape(v, quote=False) if isinstance(v, str) else v
+
+        for key in ['first_name', 'last_name', 'title', 'FIRST_NAME', 'LAST_NAME',
+                    'TITLE', 'residency', 'RESIDENCY', 'languages', 'LANGUAGES']:
+            if key in context:
+                context[key] = _xs(context[key])
+
+        for exp in context.get('work_experience', []):
+            for key in ['period', 'company', 'position']:
+                if key in exp:
+                    exp[key] = _xs(exp[key])
+            if isinstance(exp.get('general_responsibilities'), list):
+                exp['general_responsibilities'] = [_xs(r) for r in exp['general_responsibilities']]
+
+        for edu in context.get('education', []):
+            for key in ['institution', 'degree', 'graduation_year', 'country', 'level', 'title']:
+                if key in edu:
+                    edu[key] = _xs(edu[key])
+
+        for cert in context.get('certifications', []):
+            for key in ['name', 'institution', 'year', 'country', 'line']:
+                if key in cert:
+                    cert[key] = _xs(cert[key])
+
+        for proj in context.get('projects', []):
+            for key in ['name', 'nom', 'description']:
+                if key in proj:
+                    proj[key] = _xs(proj[key])
+
+        print(f"   ✅ Caractères XML échappés une seule fois (apostrophes & corrigés)")
         
         # Charger le template TMC
         doc = DocxTemplate(final_template_path)
@@ -2001,6 +2038,172 @@ Return the corrected JSON directly:"""
         # Sauvegarder
         doc.save(output_path)
         print(f"✅ CV TMC généré avec succès!")
+
+    def _translate_matrix_if_needed(self, matrix, target_language):
+        """Traduit le contenu de la skill matrix vers target_language si besoin.
+        Les textes deja dans la bonne langue sont gardes tels quels. Repli silencieux."""
+        import json, re
+        paras = []
+        for tbl in matrix.tables:
+            for row in tbl.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        if para.text.strip():
+                            paras.append(para)
+        for para in matrix.paragraphs:
+            if para.text.strip():
+                paras.append(para)
+        texts = [p.text for p in paras]
+        if not texts:
+            return
+        client = self._get_anthropic_client()
+        prompt = (
+            "Voici des courts textes extraits d'une grille de competences (skills matrix).\n"
+            "Traduis CHAQUE texte en " + target_language + ". Si un texte est DEJA en " + target_language +
+            ", renvoie-le INCHANGE. Style professionnel et concis. Ne traduis PAS les noms propres, "
+            "technologies et acronymes (ex: CRM, SAP, BPMN, SQL, Salesforce, CISCO, UX, ERP, SAC).\n"
+            "Reponds UNIQUEMENT avec un tableau JSON de chaines, de MEME longueur et MEME ordre que l'entree, sans markdown.\n\n"
+            "TEXTES (JSON): " + json.dumps(texts, ensure_ascii=False)
+        )
+        resp = client.messages.create(
+            model="claude-sonnet-4-5-20250929", max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        m = re.search(r"\[.*\]", raw, re.S)
+        translated = json.loads(m.group(0)) if m else None
+        if not translated or len(translated) != len(paras):
+            print("   Traduction matrice ignoree (format inattendu) -> verbatim", flush=True)
+            return
+        for para, newtxt in zip(paras, translated):
+            if para.runs:
+                para.runs[0].text = newtxt
+                for r in para.runs[1:]:
+                    r.text = ''
+            else:
+                para.add_run(newtxt)
+        print("   Skill matrix traduite vers " + target_language, flush=True)
+
+    def insert_skills_matrix_page2(self, cv_path, matrix_path, output_path, target_language=None):
+        """Insere la skill matrix en PAGE 2 du CV (apres la page de garde, avant les details).
+        Compose : couverture + skill matrix + contenu. Insertion verbatim.
+        Convertit la matrice en .docx au besoin (via LibreOffice)."""
+        from docx import Document
+        from docxcompose.composer import Composer
+        from pathlib import Path
+        import subprocess
+        W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+
+        mp = Path(matrix_path)
+        if mp.suffix.lower() != '.docx':
+            print("   Conversion de la skill matrix en .docx...", flush=True)
+            subprocess.run(['soffice', '--headless', '--convert-to', 'docx', '--outdir',
+                            str(mp.parent), str(mp)], check=False, timeout=120,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            converted = mp.parent / (mp.stem + '.docx')
+            if not converted.exists():
+                raise RuntimeError("Impossible de convertir la skill matrix en .docx")
+            matrix_path = str(converted)
+
+        def page_break_index(body):
+            for i, el in enumerate(list(body)):
+                if el.tag == W + 'p' and el.findall('.//' + W + 'br[@' + W + 'type="page"]'):
+                    return i
+            return None
+
+        cover = Document(cv_path)
+        content = Document(cv_path)
+        body_c, body_d = cover.element.body, content.element.body
+        idx = page_break_index(body_c)
+        if idx is None:
+            idx = len(list(body_c))  # pas de page de garde : matrice tout en haut
+
+        # Couverture = elements AVANT le saut de page (le saut est porte par le 1er
+        # paragraphe de contenu, donc on s'arrete juste avant).
+        for el in list(body_c)[idx:]:
+            if el.tag == W + 'sectPr':
+                continue
+            body_c.remove(el)
+        # Forcer un saut de page a la fin de la couverture -> la matrice sera en page 2
+        cover.add_page_break()
+        # Contenu = a partir du saut de page (garde son pageBreakBefore -> page suivante)
+        for el in list(body_d)[:idx]:
+            body_d.remove(el)
+
+        matrix = Document(matrix_path)
+        # Traduire si la langue de la matrice differe de la langue cible
+        if target_language:
+            try:
+                self._translate_matrix_if_needed(matrix, target_language)
+            except Exception as _tr_e:
+                print("   Traduction matrice echouee (" + str(_tr_e) + ") -> verbatim", flush=True)
+        # Eviter le debordement horizontal des tableaux larges (checklists)
+        try:
+            fix_table_width_to_auto(matrix)
+        except Exception:
+            pass
+        # Aligner les marges de la matrice sur celles du CV
+        try:
+            cv_sec = cover.sections[0]
+            for sec in matrix.sections:
+                sec.top_margin = cv_sec.top_margin
+                sec.bottom_margin = cv_sec.bottom_margin
+                sec.left_margin = cv_sec.left_margin
+                sec.right_margin = cv_sec.right_margin
+                sec.orientation = cv_sec.orientation
+                sec.page_width = cv_sec.page_width
+                sec.page_height = cv_sec.page_height
+        except Exception:
+            pass
+        # Mettre les tableaux larges a l'echelle de la largeur utile du CV (evite le debordement)
+        try:
+            from docx.oxml.ns import qn as _qn
+            from docx.oxml import OxmlElement as _Ox
+            cv_sec = cover.sections[0]
+            target = int((cv_sec.page_width - cv_sec.left_margin - cv_sec.right_margin) / 635)  # EMU -> twips
+            for tbl in matrix.tables:
+                tblel = tbl._tbl
+                grid = tblel.find(_qn('w:tblGrid'))
+                cols = grid.findall(_qn('w:gridCol')) if grid is not None else []
+                total = sum(int(c.get(_qn('w:w')) or 0) for c in cols)
+                if total <= target or total <= 0:
+                    continue
+                f = target / total
+                for c in cols:
+                    c.set(_qn('w:w'), str(max(1, int(int(c.get(_qn('w:w')) or 0) * f))))
+                for tcW in tblel.iter(_qn('w:tcW')):
+                    if tcW.get(_qn('w:type')) == 'dxa':
+                        tcW.set(_qn('w:w'), str(max(1, int(int(tcW.get(_qn('w:w')) or 0) * f))))
+                tblPr = tblel.find(_qn('w:tblPr'))
+                if tblPr is not None:
+                    tblW = tblPr.find(_qn('w:tblW'))
+                    if tblW is None:
+                        tblW = _Ox('w:tblW'); tblPr.append(tblW)
+                    tblW.set(_qn('w:type'), 'dxa'); tblW.set(_qn('w:w'), str(target))
+                    layout = tblPr.find(_qn('w:tblLayout'))
+                    if layout is None:
+                        layout = _Ox('w:tblLayout'); tblPr.append(layout)
+                    layout.set(_qn('w:type'), 'fixed')
+        except Exception:
+            pass
+        bm = matrix.element.body
+        for el in list(bm):
+            tag = el.tag.split('}')[-1]
+            if tag == 'p':
+                txt = ''.join(t.text or '' for t in el.findall('.//' + W + 't'))
+                if not txt.strip():
+                    bm.remove(el)
+                else:
+                    break
+            else:
+                break
+
+        comp = Composer(cover)
+        comp.append(matrix)
+        comp.append(content)
+        comp.save(output_path)
+        print("Skill matrix inseree en page 2", flush=True)
+        return True
 
     def generate_ms_cv_3parts(self, tmc_context, skills_matrix_path, output_path, 
                               cover_template="TMC_NA_template_EN_Anonymise_CoverPage.docx",

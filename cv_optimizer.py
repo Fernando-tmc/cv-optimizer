@@ -385,6 +385,26 @@ def local_css():
         [data-testid="stDownloadButton"] > button:active {{
             transform: translateY(0) !important;
         }}
+
+        /* ===== Refonte UI ===== */
+        [data-testid="column"] [data-testid="stMarkdownContainer"] h3 {{ min-height: 3.4em; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] span {{ display: none; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] small {{ display: none; }}
+        [data-testid="stFileUploaderDropzoneInstructions"] > div::before {{
+            content: "Glissez-deposez un fichier ici"; font-weight: 600; color: #374151;
+        }}
+        [data-testid="stFileUploaderDropzoneInstructions"] > div::after {{
+            content: "Taille max. 200 Mo par fichier"; display: block; font-size: 0.8rem; color: #6b7280; margin-top: 2px;
+        }}
+        [data-testid="stFileUploaderDropzone"] button {{ font-size: 0 !important; }}
+        [data-testid="stFileUploaderDropzone"] button::after {{ content: "Parcourir"; font-size: 0.9rem; }}
+        .stButton button[kind="primary"],
+        [data-testid="baseButton-primary"],
+        [data-testid="stBaseButton-primary"] {{
+            background: linear-gradient(90deg, {PRIMARY_BLUE} 0%, {SECONDARY_ORANGE} 100%) !important;
+            color: #ffffff !important; border: none !important; border-radius: 12px !important;
+            font-weight: 700 !important; padding: 0.85rem 1.5rem !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -592,6 +612,8 @@ if 'selected_client' not in st.session_state:
     st.session_state.selected_client = "Desjardins"
 if 'selected_language' not in st.session_state:
     st.session_state.selected_language = "French"
+if 'anonymized' not in st.session_state:
+    st.session_state.anonymized = False
 if 'cv_file' not in st.session_state:
     st.session_state.cv_file = None
 if 'jd_file' not in st.session_state:
@@ -676,7 +698,7 @@ def show_login_screen():
                 </text>
             </svg>
         </div>
-        <p class="tmc-subtitle">Generate optimized CVs with AI</p>
+        <p class="tmc-subtitle">Générez des CV optimisés grâce à l'IA</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -732,63 +754,30 @@ def main_app():
     with st.sidebar:
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         
-        # Client selector
-        st.markdown("#### 🏢 Select Client")
-        
-        clients_list = list(CLIENT_DATA.keys())
-        client = st.selectbox(
-            "Client",
-            options=clients_list,
-            index=clients_list.index(st.session_state.selected_client),
-            label_visibility="collapsed",
-            key="client_select"
-        )
-        
-        if client != st.session_state.selected_client:
-            st.session_state.selected_client = client
-            st.session_state.matching_done = False
-            st.session_state.matching_data = None
-            st.session_state.skills_matrix_file = None
-            st.session_state.show_generate_button = False
-            st.rerun()
-        
-        client_info = CLIENT_DATA[st.session_state.selected_client]
-        rules_html = "<br>".join(client_info["rules"])
-        
-        st.markdown(f"""
-        <div class="client-card {client_info['card_class']}">
-            {rules_html}
-        </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("#### 🧰 CV Optimizer TMC")
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         
         st.markdown("""
         <div class="privacy-note">
             <span>🔒</span>
-            <span>Your data is processed securely and never stored</span>
+            <span>Vos données sont traitées de façon sécurisée et jamais conservées</span>
         </div>
         """, unsafe_allow_html=True)
         
-        # Buttons
-        col_new, col_logout = st.columns(2)
-        
-        with col_new:
-            if st.button("🔄 New", use_container_width=True, key="new_button"):
-                st.session_state.matching_done = False
-                st.session_state.matching_data = None
-                st.session_state.cv_file = None
-                st.session_state.jd_file = None
-                st.session_state.processing = False
-                st.session_state.skills_matrix_file = None
-                st.session_state.show_generate_button = False
-                st.session_state.reset_counter += 1
-                st.rerun()
-        
-        with col_logout:
-            if st.button("🚪 Logout", use_container_width=True, key="logout_button"):
-                clear_session()
-                st.rerun()
+        # Boutons (empiles pour eviter la coupure du texte)
+        if st.button("🔄 Nouveau", use_container_width=True, key="new_button"):
+            st.session_state.matching_done = False
+            st.session_state.matching_data = None
+            st.session_state.cv_file = None
+            st.session_state.jd_file = None
+            st.session_state.processing = False
+            st.session_state.skills_matrix_file = None
+            st.session_state.show_generate_button = False
+            st.session_state.reset_counter += 1
+            st.rerun()
+        if st.button("🚪 Deconnexion", use_container_width=True, key="logout_button"):
+            clear_session()
+            st.rerun()
         
         # Logo at bottom of sidebar
         logo_path = "TMC big logo.png"
@@ -825,80 +814,103 @@ def main_app():
                 </text>
             </svg>
         </div>
-        <p class="tmc-subtitle">Generate a professional CV perfectly aligned with your Job Description</p>
-        <p class="tmc-subtitle" style="margin-top: 0.2rem; font-size: 0.95rem;">Designed for Business Managers and Recruiters</p>
+        <p class="tmc-subtitle">Générez un CV professionnel parfaitement aligné avec votre description de poste</p>
+        <p class="tmc-subtitle" style="margin-top: 0.2rem; font-size: 0.95rem;">Conçu pour les Business Managers et recruteurs</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Upload section
-    col1, col2 = st.columns(2)
-    
+    # ===== DRAG & DROP : CV (requis), JD (optionnel), Skill matrix (optionnel) =====
+    col1, col2, col3 = st.columns(3)
+
     with col1:
-        st.markdown("### 📄 Your Resume")
+        st.markdown("### 📄 CV  *(requis)*")
         cv_file = st.file_uploader(
-            "Upload your CV",
-            type=['pdf', 'docx', 'doc', 'txt'],
+            "CV", type=['pdf', 'docx', 'doc', 'txt'],
             label_visibility="collapsed",
             key=f"cv_uploader_{st.session_state.reset_counter}"
         )
         if cv_file:
-            if 'cv_upload_status' not in st.session_state:
-                st.session_state.cv_upload_status = st.empty()
-            st.session_state.cv_upload_status.success(f"✅ {cv_file.name}")
             st.session_state.cv_file = cv_file
-    
+            st.success(f"✅ {cv_file.name}")
+
     with col2:
-        st.markdown("### 📊 Job Description")
+        st.markdown("### 📊 Description de poste  *(optionnel)*")
         jd_file = st.file_uploader(
-            "Upload job description",
-            type=['txt', 'docx', 'doc', 'pdf'],
+            "JD", type=['txt', 'docx', 'doc', 'pdf'],
             label_visibility="collapsed",
             key=f"jd_uploader_{st.session_state.reset_counter}"
         )
         if jd_file:
-            if 'jd_upload_status' not in st.session_state:
-                st.session_state.jd_upload_status = st.empty()
-            st.session_state.jd_upload_status.success(f"✅ {jd_file.name}")
             st.session_state.jd_file = jd_file
-    
-    # Language section (only for CAE)
-    if CLIENT_DATA[st.session_state.selected_client]["show_language"]:
-        st.markdown("---")
-        st.markdown('<h3 style="text-align: center;">🌐 Generated CV Language</h3>', unsafe_allow_html=True)
-        language = st.radio(
-            "Select language",
-            options=["🇫🇷 French", "🇬🇧 English"],
-            horizontal=True,
+            st.success(f"✅ {jd_file.name}")
+
+    with col3:
+        st.markdown("### 🧩 Skill matrix  *(optionnel)*")
+        sm_file = st.file_uploader(
+            "Skill matrix", type=['docx', 'doc', 'pdf'],
             label_visibility="collapsed",
+            key=f"skills_matrix_uploader_{st.session_state.reset_counter}"
+        )
+        if sm_file:
+            st.session_state.skills_matrix_file = sm_file
+            st.success(f"✅ {sm_file.name}")
+
+    # ===== OPTIONS : langue (FR par défaut) + anonymisation (décoché par défaut) =====
+    st.markdown("---")
+    opt1, opt2 = st.columns(2)
+    with opt1:
+        st.markdown("**🌐 Langue du CV généré**")
+        language = st.radio(
+            "Langue", options=["🇫🇷 Français", "🇬🇧 English"],
+            index=0, horizontal=True, label_visibility="collapsed",
             key="language_selector"
         )
-        st.session_state.selected_language = language.split()[1]
-    else:
-        st.session_state.selected_language = CLIENT_DATA[st.session_state.selected_client]["language"]
-    
-    # Analyze button
-    if not st.session_state.show_generate_button:
-        st.markdown("---")
-        analyze_button = st.button(
-            "📊 Analyze Matching",
-            use_container_width=True,
-            disabled=st.session_state.processing,
-            key="analyze_button"
+        st.session_state.selected_language = "French" if "Français" in language else "English"
+    with opt2:
+        st.markdown("**🔒 Anonymisation**")
+        st.session_state.anonymized = st.checkbox(
+            "CV anonymisé", value=st.session_state.get('anonymized', False),
+            key="anonymized_checkbox"
         )
-        
-        if analyze_button:
-            if st.session_state.cv_file and st.session_state.jd_file:
-                if 'cv_upload_status' in st.session_state:
-                    st.session_state.cv_upload_status.empty()
-                if 'jd_upload_status' in st.session_state:
-                    st.session_state.jd_upload_status.empty()
-                
-                st.session_state.processing = True
-                process_cv_matching()
-            else:
-                st.error("⚠️ Please upload both CV and Job Description files")
-    
-    # Display results if matching is done
+
+    # ===== DEUX ACTIONS INDÉPENDANTES =====
+    st.markdown("---")
+    b1, b2 = st.columns(2)
+    with b1:
+        matching_btn = st.button(
+            "📊 Tableau de matching", use_container_width=True, type="primary", key="matching_btn",
+            help="Nécessite un CV ET une description de poste"
+        )
+    with b2:
+        generate_btn = st.button(
+            "📄 CV converti TMC", use_container_width=True, type="primary", key="generate_btn",
+            help="Nécessite au moins un CV (la description de poste est optionnelle)"
+        )
+
+    # Le clic positionne un drapeau ; le traitement se lance juste apres avec un
+    # retour visuel immediat (spinner) -> plus besoin de cliquer plusieurs fois.
+    if matching_btn:
+        if st.session_state.cv_file and st.session_state.jd_file:
+            st.session_state.run_matching = True
+        else:
+            st.error("⚠️ Le tableau de matching nécessite un CV ET une description de poste.")
+    if generate_btn:
+        if st.session_state.cv_file:
+            st.session_state.run_generate = True
+        else:
+            st.error("⚠️ Veuillez d'abord déposer un CV.")
+
+    if st.session_state.get('run_matching'):
+        st.session_state.run_matching = False
+        with st.spinner("📊 Analyse du matching en cours…"):
+            process_cv_matching()
+
+    if st.session_state.get('run_generate'):
+        st.session_state.run_generate = False
+        with st.spinner("📝 Génération du CV en cours… (30–60 s, merci de patienter)"):
+            process_cv_generation()
+
+    # Résultats du matching (si déjà calculé)
     if st.session_state.matching_done and st.session_state.matching_data:
         display_matching_results(st.session_state.matching_data)
 
@@ -938,7 +950,7 @@ def process_cv_matching():
         
         # Step 3: Matching Analysis
         jd_text = enricher.read_job_description(str(jd_path))
-        matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text)
+        matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text, language=st.session_state.selected_language)
         
         timeline_placeholder.empty()
         
@@ -965,6 +977,36 @@ def process_cv_matching():
 # ==========================================
 # 📊 DISPLAY RESULTS
 # ==========================================
+
+def build_matching_report_docx(results, parsed_cv):
+    """Construit un .docx du tableau de matching (à envoyer au candidat)."""
+    from docx import Document
+    import io
+    doc = Document()
+    nom = (parsed_cv.get('nom_complet') or 'Candidat').strip()
+    doc.add_heading(f"Analyse de matching — {nom}", level=1)
+    doc.add_paragraph(f"Score global : {results.get('score_matching', 0)}/100")
+    domaines = results.get('domaines_analyses', [])
+    if domaines:
+        t = doc.add_table(rows=1, cols=4)
+        t.style = 'Table Grid'
+        hdr = t.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text, hdr[3].text = 'Domaine', 'Poids', 'Score', 'Commentaire'
+        for d in domaines:
+            c = t.add_row().cells
+            c[0].text = str(d.get('domaine', ''))
+            c[1].text = f"{d.get('poids', '')}%"
+            c[2].text = f"{d.get('score', '')}/{d.get('score_max', '')}"
+            c[3].text = str(d.get('commentaire', ''))
+    synth = results.get('synthese_matching', '')
+    if synth:
+        doc.add_heading("Synthèse", level=2)
+        doc.add_paragraph(synth)
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
 
 def display_matching_results(data):
     """Display matching results with professional styling"""
@@ -1040,68 +1082,36 @@ def display_matching_results(data):
                 icon = "✅"
             return f"{icon} {row['domaine']}"
         
-        df_domaines['Domain'] = df_domaines.apply(format_domain, axis=1)
-        df_domaines['Weight'] = df_domaines['poids'].astype(str) + '%'
-        df_domaines['Score'] = df_domaines.apply(
-            lambda row: f"{row['score']}/{row['score_max']}", axis=1
-        )
-        
-        def truncate(text, max_len=150):
-            if len(text) <= max_len:
-                return text
-            text = text[:max_len]
-            last_space = text.rfind(' ')
-            if last_space > 0:
-                text = text[:last_space]
-            if text and text[-1] not in '.!?':
-                text += '.'
-            return text
-        
-        df_domaines['Comment'] = df_domaines['commentaire'].apply(truncate)
-        df_display = df_domaines[['Domain', 'Weight', 'Score', 'Comment']]
+        df_domaines['Domaine'] = df_domaines.apply(format_domain, axis=1)
+        df_domaines['Commentaire'] = df_domaines['commentaire']  # texte COMPLET (pas de troncature)
+        df_display = df_domaines[['Domaine', 'Commentaire']]
         
         def style_rows(row):
-            idx = row.name
-            match = df_domaines.loc[idx, 'match']
-            
-            if match == 'incompatible':
-                bg = '#fef2f2'
-            elif match == 'partiel':
-                bg = '#fffbeb'
-            else:
-                bg = '#f0fdf4'
-            
-            return [f'background-color: {bg}'] * len(row)
+            match = df_domaines.loc[row.name, 'match']
+            bg = '#fef2f2' if match == 'incompatible' else ('#fffbeb' if match == 'partiel' else '#f0fdf4')
+            return [f'background-color: {bg}; vertical-align: top'] * len(row)
         
-        styled_df = df_display.style.apply(style_rows, axis=1)
-        
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Domain": st.column_config.TextColumn(
-                    "Domain",
-                    width=400,
-                    help="Technical/functional domain"
-                ),
-                "Weight": st.column_config.TextColumn(
-                    "Weight",
-                    width=70,
-                    help="Importance weight (%)"
-                ),
-                "Score": st.column_config.TextColumn(
-                    "Score",
-                    width=70,
-                    help="Candidate score"
-                ),
-                "Comment": st.column_config.TextColumn(
-                    "Comment",
-                    width=None,
-                    help="Detailed assessment"
-                ),
-            }
-        )
+        # Rendu HTML complet : index masque (pas de 0,1,2...), commentaire entier
+        # (retour a la ligne), couleurs par ligne, bordures. Se copie-colle bien.
+        try:
+            styler = (
+                df_display.style
+                .apply(style_rows, axis=1)
+                .set_properties(subset=['Commentaire'], **{'white-space': 'normal', 'text-align': 'left', 'vertical-align': 'top'})
+                .set_properties(subset=['Domaine'], **{'white-space': 'normal', 'font-weight': '600', 'vertical-align': 'top', 'width': '26%'})
+                .set_table_styles([
+                    {'selector': 'table', 'props': [('width', '100%'), ('border-collapse', 'collapse'), ('font-size', '0.9rem')]},
+                    {'selector': 'th', 'props': [('text-align', 'left'), ('background-color', '#f1f5f9'), ('border', '1px solid #d1d5db'), ('padding', '8px')]},
+                    {'selector': 'td', 'props': [('border', '1px solid #e5e7eb'), ('padding', '8px')]},
+                ])
+            )
+            try:
+                styler = styler.hide(axis='index')
+            except Exception:
+                styler = styler.hide_index()
+            st.markdown(styler.to_html(), unsafe_allow_html=True)
+        except Exception:
+            st.table(df_display.reset_index(drop=True))
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -1207,54 +1217,48 @@ def display_matching_results(data):
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Skills Matrix Upload Section (ONLY for Morgan Stanley)
-    if st.session_state.selected_client == "Morgan Stanley":
-        st.markdown("---")
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div style="text-align: center; margin-bottom: 15px;">
-            <strong style="color: #193E92; font-size: 1.15rem;">📊 Skills Matrix Upload (Required)</strong>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col_sm_left, col_sm_center, col_sm_right = st.columns([1, 2, 1])
-        with col_sm_center:
-            skills_matrix_file = st.file_uploader(
-                "Upload Skills Matrix (.docx only)",
-                type=['docx'],
-                key=f"skills_matrix_uploader_{st.session_state.reset_counter}",
-                help="Morgan Stanley requires a Skills Matrix as page 2 of the CV"
-            )
-            
-            if skills_matrix_file:
-                st.session_state.skills_matrix_file = skills_matrix_file
-                st.success(f"✅ Skills Matrix Uploaded: **{skills_matrix_file.name}**")
-            else:
-                if st.session_state.skills_matrix_file:
-                    st.info(f"✅ Skills Matrix Ready: **{st.session_state.skills_matrix_file.name}**")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Generate CV button
-    if st.button("📝 Generate Optimized CV", use_container_width=True, key="generate_cv_button"):
-        generate_cv(data)
+    st.markdown("---")
+    st.info("➡️ Pour générer le CV au format TMC, utilise le bouton « 📄 CV converti TMC » en haut de la page.")
 
 # ==========================================
 # 📝 CV GENERATION
 # ==========================================
 
+def process_cv_generation():
+    """Parse le CV (+ JD optionnelle) puis génère le CV TMC (bouton 'CV converti TMC')."""
+    try:
+        from cv_enricher import CVEnricher
+        api_key = os.getenv('ANTHROPIC_API_KEY') or st.secrets.get("ANTHROPIC_API_KEY")
+        enricher = CVEnricher(api_key=api_key)
+        st.markdown("---")
+        st.info("⏳ Lecture et analyse du CV...")
+        cv_path = save_uploaded(st.session_state.cv_file)
+        cv_text = enricher.extract_cv_text(str(cv_path))
+        parsed_cv = enricher.parse_cv_with_claude(cv_text)
+        jd_text = ""
+        matching_analysis = None
+        if st.session_state.jd_file:
+            jd_path = save_uploaded(st.session_state.jd_file)
+            jd_text = enricher.read_job_description(str(jd_path))
+            matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text, language=st.session_state.selected_language)
+        data = {
+            'parsed_cv': parsed_cv,
+            'jd_text': jd_text or "(Aucune description de poste fournie — reformate fidèlement le CV au format TMC, sans cibler d'offre.)",
+            'matching_analysis': matching_analysis,
+        }
+        st.session_state.processing = False
+        generate_cv(data)
+    except Exception as e:
+        st.session_state.processing = False
+        st.error(f"❌ Erreur : {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
 def generate_cv(data):
     """Generate the optimized CV with 3-step timeline"""
-    
-    if st.session_state.selected_client == "Morgan Stanley":
-        if not st.session_state.skills_matrix_file:
-            st.error("❌ **Skills Matrix is required for Morgan Stanley clients**")
-            st.error("📊 Please upload the Skills Matrix document before generating the CV.")
-            st.stop()
-    
     st.markdown("---")
-    st.markdown("## 📝 Generating Optimized CV")
+    st.markdown("## 📝 Génération du CV TMC")
     
     timeline_placeholder = st.empty()
     
@@ -1270,8 +1274,6 @@ def generate_cv(data):
         api_key = os.getenv('ANTHROPIC_API_KEY') or st.secrets.get("ANTHROPIC_API_KEY")
         enricher = CVEnricher(api_key=api_key)
         
-        client_config = CLIENT_DATA[st.session_state.selected_client]
-        
         timeline_placeholder.markdown(horizontal_progress_timeline(1, 3, generation_steps), unsafe_allow_html=True)
         
         enriched_cv = enricher.enrich_cv_with_prompt(
@@ -1281,45 +1283,43 @@ def generate_cv(data):
             matching_analysis=data.get('matching_analysis')
         )
         
-        tmc_context = enricher.map_to_tmc_structure(data['parsed_cv'], enriched_cv)
+        template_lang = 'EN' if st.session_state.selected_language == 'English' else 'FR'
+        tmc_context = enricher.map_to_tmc_structure(data['parsed_cv'], enriched_cv, template_lang=template_lang)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
             output_path = tmp_file.name
         
-        if client_config["use_skizmatrix"] and st.session_state.skills_matrix_file:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            skills_matrix_path = Path(output_path).parent / f"skills_matrix_{ts}.docx"
-            with open(skills_matrix_path, 'wb') as f:
-                st.session_state.skills_matrix_file.seek(0)
-                f.write(st.session_state.skills_matrix_file.read())
-            
-            success, result = enricher.generate_ms_cv_3parts(
-                tmc_context=tmc_context,
-                skills_matrix_path=str(skills_matrix_path),
-                output_path=output_path
-            )
-            
-            if success:
-                keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
-                if keywords:
-                    enricher.apply_bold_post_processing(output_path, keywords)
-        else:
-            if client_config["anonymize"]:
-                template_file = f"Template_{st.session_state.selected_language[:2].upper()}_Anonymise.docx"
-            else:
-                template_file = f"Template_{st.session_state.selected_language[:2].upper()}.docx"
-            
-            enricher.generate_tmc_docx(
-                tmc_context,
-                output_path,
-                template_path=template_file
-            )
-            
-            keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
-            if keywords:
-                enricher.apply_bold_post_processing(output_path, keywords)
-            
-            success = True
+        suffix = '_Anonymise' if st.session_state.get('anonymized', False) else ''
+        template_file = f"Template_{template_lang}{suffix}.docx"
+        
+        enricher.generate_tmc_docx(
+            tmc_context,
+            output_path,
+            template_path=template_file
+        )
+        
+        keywords = enriched_cv.get('mots_cles_a_mettre_en_gras', [])
+        if keywords:
+            enricher.apply_bold_post_processing(output_path, keywords)
+        
+        success = True
+        result = None
+        
+        # 🧩 Skill matrix -> insérée en PAGE 2 (si fournie)
+        if st.session_state.get('skills_matrix_file'):
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                sm_in = st.session_state.skills_matrix_file
+                sm_suffix = Path(sm_in.name).suffix or '.docx'
+                sm_path = Path(output_path).parent / f"skillmatrix_{ts}{sm_suffix}"
+                with open(sm_path, 'wb') as f:
+                    sm_in.seek(0)
+                    f.write(sm_in.read())
+                merged_path = Path(output_path).parent / f"cv_merged_{ts}.docx"
+                enricher.insert_skills_matrix_page2(output_path, str(sm_path), str(merged_path), target_language=st.session_state.selected_language)
+                output_path = str(merged_path)
+            except Exception as _sm_e:
+                st.warning(f"⚠️ Skill matrix non insérée (CV généré sans elle) : {_sm_e}")
         
         timeline_placeholder.empty()
         
@@ -1346,18 +1346,10 @@ def generate_cv(data):
             
             titre_clean = re.sub(r'[^\w\s-]', '', titre).strip()
             
-            client = st.session_state.selected_client
             language = st.session_state.selected_language
-            
-            if client == "Desjardins":
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
-            elif client == "Morgan Stanley":
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
-            elif client == "CAE":
-                lang_suffix = "(EN)" if language == "English" else "(FR)"
-                filename = f"CV - {nom_formatted} - {titre_clean} {lang_suffix}.docx"
-            else:
-                filename = f"CV - {nom_formatted} - {titre_clean}.docx"
+            lang_suffix = "(EN)" if language == "English" else "(FR)"
+            anon_suffix = " (Anonymise)" if st.session_state.get('anonymized', False) else ""
+            filename = f"CV - {nom_formatted} - {titre_clean} {lang_suffix}{anon_suffix}.docx"
             
             st.markdown("""
             <style>
@@ -1425,8 +1417,8 @@ def show_footer():
     st.markdown(
         f"""
         <div class='tmc-footer'>
-            <strong>CV Optimizer V1.3.4</strong> — Professional CV Generation Tool<br>
-            © 2025 All Rights Reserved
+            <strong>CV Optimizer V1.3.4</strong> — Outil professionnel de génération de CV<br>
+            © 2025 Tous droits réservés
         </div>
         """,
         unsafe_allow_html=True,
