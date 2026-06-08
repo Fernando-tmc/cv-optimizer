@@ -964,6 +964,11 @@ def process_cv_matching():
         st.session_state.matching_done = True
         st.session_state.show_generate_button = True
         st.session_state.processing = False
+        try:
+            from cv_enricher import record_matching
+            record_matching()
+        except Exception:
+            pass
         
         st.success("✅ Analysis Complete!")
         st.rerun()
@@ -1304,6 +1309,11 @@ def generate_cv(data):
         
         success = True
         result = None
+        try:
+            from cv_enricher import record_cv
+            record_cv()
+        except Exception:
+            pass
         
         # 🧩 Skill matrix -> insérée en PAGE 2 (si fournie)
         if st.session_state.get('skills_matrix_file'):
@@ -1428,7 +1438,32 @@ def show_footer():
 # 🚀 MAIN ENTRY POINT
 # ==========================================
 
+def show_admin_dashboard():
+    """Tableau de bord d'usage - accessible uniquement via ?admin=<code> (cache aux utilisateurs)."""
+    from cv_enricher import get_stats, reset_stats
+    st.markdown("## 📊 Tableau de bord — Usage (admin)")
+    sdata = get_stats()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("CV générés", sdata["cv_count"])
+    c2.metric("Tableaux de matching", sdata["matching_count"])
+    c3.metric("Requêtes API", sdata["api_calls"])
+    c4, c5, c6 = st.columns(3)
+    c4.metric("Coût total estimé", f"${sdata['cost']:.2f}")
+    c5.metric("Coût moyen / CV", f"${sdata['cost_per_cv']:.3f}" if sdata["cv_count"] else "—")
+    c6.metric("Tokens in / out", f"{sdata['input_tokens']:,} / {sdata['output_tokens']:,}")
+    st.caption("Compteur fichier — se réinitialise au redéploiement. Prix Sonnet 4.5 : $3 / $15 par MTok.")
+    if st.button("🔄 Réinitialiser le compteur", key="reset_stats_btn"):
+        reset_stats()
+        st.rerun()
+
+
 if __name__ == "__main__":
+    _admin = st.query_params.get("admin")
+    _admin_code = os.getenv("ADMIN_CODE") or "tmc-usage-2026"
+    if _admin and _admin == _admin_code:
+        show_admin_dashboard()
+        st.stop()
+
     if not st.session_state.authenticated:
         restore_session_from_cookies()
     
