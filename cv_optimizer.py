@@ -1459,7 +1459,7 @@ def show_admin_dashboard():
 
 if __name__ == "__main__":
     _admin = st.query_params.get("admin")
-    _admin_code = os.getenv("ADMIN_CODE") or "tmc-usage-2026"
+    _admin_code = os.getenv("ADMIN_CODE") or "TMC-ADMIN-2026"
     if _admin and _admin == _admin_code:
         show_admin_dashboard()
         st.stop()
