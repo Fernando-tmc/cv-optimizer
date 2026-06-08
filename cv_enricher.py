@@ -25,6 +25,57 @@ import tempfile
 print(">>> cv_enricher module loading", flush=True)
 
 
+import tempfile
+
+# ==========================================
+# 📊 COMPTEUR D'USAGE (fichier - reset au redeploiement)
+# ==========================================
+_STATS_FILE = os.path.join(tempfile.gettempdir(), "cv_optimizer_usage.json")
+_PRICE_IN = 3.0 / 1_000_000    # Claude Sonnet 4.5 : $3 / MTok input
+_PRICE_OUT = 15.0 / 1_000_000  # $15 / MTok output
+_STATS_DEFAULT = {"cv_count": 0, "matching_count": 0, "api_calls": 0,
+                  "input_tokens": 0, "output_tokens": 0}
+
+def _load_stats():
+    try:
+        with open(_STATS_FILE) as f:
+            d = json.load(f)
+        for k, v in _STATS_DEFAULT.items():
+            d.setdefault(k, v)
+        return d
+    except Exception:
+        return dict(_STATS_DEFAULT)
+
+def _save_stats(d):
+    try:
+        with open(_STATS_FILE, "w") as f:
+            json.dump(d, f)
+    except Exception:
+        pass
+
+def record_api_usage(input_tokens, output_tokens):
+    d = _load_stats()
+    d["api_calls"] += 1
+    d["input_tokens"] += int(input_tokens or 0)
+    d["output_tokens"] += int(output_tokens or 0)
+    _save_stats(d)
+
+def record_cv():
+    d = _load_stats(); d["cv_count"] += 1; _save_stats(d)
+
+def record_matching():
+    d = _load_stats(); d["matching_count"] += 1; _save_stats(d)
+
+def get_stats():
+    d = _load_stats()
+    d["cost"] = d["input_tokens"] * _PRICE_IN + d["output_tokens"] * _PRICE_OUT
+    d["cost_per_cv"] = (d["cost"] / d["cv_count"]) if d["cv_count"] else 0.0
+    return d
+
+def reset_stats():
+    _save_stats(dict(_STATS_DEFAULT))
+
+
 def fix_table_width_to_auto(doc):
     """
     Change table width from fixed to auto to prevent horizontal shift after merge.
@@ -96,6 +147,18 @@ class CVEnricher:
                 print(f">>> ERROR creating anthropic client: {repr(e)}", flush=True)
                 raise
         return self._anthropic_client
+
+    def _track_create(self, **kwargs):
+        """Appelle l'API Claude et enregistre les tokens consommes (compteur d'usage)."""
+        client = self._get_anthropic_client()
+        resp = client.messages.create(**kwargs)
+        try:
+            u = getattr(resp, "usage", None)
+            if u is not None:
+                record_api_usage(getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
+        except Exception:
+            pass
+        return resp
     
     # ========================================
     # MODULE 1 : EXTRACTION UNIVERSELLE
@@ -385,7 +448,7 @@ RÈGLES CRITIQUES:
 - Format JSON strict uniquement"""
 
             print(f">>> Calling Claude API with timeout=300s...", flush=True)
-            response = client.messages.create(
+            response = self._track_create(
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=8000,
                 timeout=300.0,  # 5 minutes max
@@ -727,7 +790,7 @@ Génère l'analyse maintenant:"""
             
             for attempt in range(max_retries):
                 try:
-                    response = client.messages.create(
+                    response = self._track_create(
                         model="claude-sonnet-4-5-20250929",
                         max_tokens=4000,
                         timeout=900.0,  # 15 minutes
@@ -871,7 +934,7 @@ Return the corrected JSON directly:"""
                 fix_response = None
                 for fix_attempt in range(2):
                     try:
-                        fix_response = client.messages.create(
+                        fix_response = self._track_create(
                             model="claude-sonnet-4-5-20250929",
                             max_tokens=4000,
                             timeout=300.0,  # 5 minutes for fix
@@ -1513,7 +1576,7 @@ IMPORTANT FINAL - RÈGLES JSON STRICTES:
 Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
 
             print(f">>> Calling Claude API for enrichment with timeout=300s...", flush=True)
-            response = client.messages.create(
+            response = self._track_create(
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=8000,
                 timeout=300.0,  # 5 minutes max
@@ -1569,7 +1632,7 @@ Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
 
 Return the corrected JSON directly:"""
                     
-                    fix_response = client.messages.create(
+                    fix_response = self._track_create(
                         model="claude-sonnet-4-5-20250929",
                         max_tokens=8000,
                         timeout=300.0,  # Same as main enrichment call
@@ -2065,7 +2128,7 @@ Return the corrected JSON directly:"""
             "Reponds UNIQUEMENT avec un tableau JSON de chaines, de MEME longueur et MEME ordre que l'entree, sans markdown.\n\n"
             "TEXTES (JSON): " + json.dumps(texts, ensure_ascii=False)
         )
-        resp = client.messages.create(
+        resp = self._track_create(
             model="claude-sonnet-4-5-20250929", max_tokens=4000,
             messages=[{"role": "user", "content": prompt}]
         )
