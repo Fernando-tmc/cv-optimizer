@@ -27,6 +27,10 @@ print(">>> cv_enricher module loading", flush=True)
 
 import tempfile
 
+# Modèles : Sonnet (qualité) pour matching/enrichissement, Haiku (rapide) pour la lecture du CV
+_MODEL_MAIN = "claude-sonnet-4-5-20250929"
+_MODEL_FAST = "claude-haiku-4-5-20251001"
+
 # ==========================================
 # 📊 COMPTEUR D'USAGE (fichier - reset au redeploiement)
 # ==========================================
@@ -447,9 +451,9 @@ RÈGLES CRITIQUES:
 - Si une section est vide, mets une liste vide []
 - Format JSON strict uniquement"""
 
-            print(f">>> Calling Claude API with timeout=300s...", flush=True)
+            print(f">>> Calling Claude (Haiku - rapide) for parsing...", flush=True)
             response = self._track_create(
-                model="claude-sonnet-4-5-20250929",
+                model=_MODEL_FAST,
                 max_tokens=8000,
                 timeout=300.0,  # 5 minutes max
                 messages=[{"role": "user", "content": prompt}]
@@ -1016,7 +1020,8 @@ Return the corrected JSON directly:"""
         parsed_cv: Dict[str, Any], 
         jd_text: str, 
         language: str = "French",
-        matching_analysis: Dict[str, Any] = None  # ✅ FIX: Nouveau paramètre pour réutiliser le matching
+        matching_analysis: Dict[str, Any] = None,  # réutiliser un matching préalable
+        force_simple: bool = False  # forcer le prompt simplifié (génération directe, 1 appel)
     ) -> Dict[str, Any]:
         """
         Enrichir le CV avec l'IA
@@ -1034,7 +1039,7 @@ Return the corrected JSON directly:"""
         import time
         
         # ⚠️ CRITICIAL: Déterminer si on réutilise le scoring du Step 1
-        reuse_scoring = matching_analysis is not None
+        reuse_scoring = (matching_analysis is not None) or force_simple
         
         print(f"✨ Enrichissement du CV avec l'IA...", flush=True)
         print(f"   Langue cible: {language}", flush=True)

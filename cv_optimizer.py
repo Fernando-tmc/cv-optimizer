@@ -1241,15 +1241,16 @@ def process_cv_generation():
         cv_text = enricher.extract_cv_text(str(cv_path))
         parsed_cv = enricher.parse_cv_with_claude(cv_text)
         jd_text = ""
-        matching_analysis = None
         if st.session_state.jd_file:
             jd_path = save_uploaded(st.session_state.jd_file)
             jd_text = enricher.read_job_description(str(jd_path))
-            matching_analysis = enricher.analyze_cv_matching(parsed_cv, jd_text, language=st.session_state.selected_language)
+        # ⚡ Optimisation : pas d'appel de matching séparé pour la génération.
+        # L'enrichissement s'aligne directement sur l'offre en UN seul appel (prompt simplifié).
         data = {
             'parsed_cv': parsed_cv,
             'jd_text': jd_text or "(Aucune description de poste fournie — reformate fidèlement le CV au format TMC, sans cibler d'offre.)",
-            'matching_analysis': matching_analysis,
+            'matching_analysis': None,
+            'force_simple': True,
         }
         st.session_state.processing = False
         generate_cv(data)
@@ -1285,7 +1286,8 @@ def generate_cv(data):
             data['parsed_cv'],
             data['jd_text'],
             language=st.session_state.selected_language,
-            matching_analysis=data.get('matching_analysis')
+            matching_analysis=data.get('matching_analysis'),
+            force_simple=data.get('force_simple', False)
         )
         
         template_lang = 'EN' if st.session_state.selected_language == 'English' else 'FR'
