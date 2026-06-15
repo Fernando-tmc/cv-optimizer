@@ -451,9 +451,9 @@ RÈGLES CRITIQUES:
 - Si une section est vide, mets une liste vide []
 - Format JSON strict uniquement"""
 
-            print(f">>> Calling Claude (Haiku - rapide) for parsing...", flush=True)
+            print(f">>> Calling Claude (Sonnet) for parsing...", flush=True)
             response = self._track_create(
-                model=_MODEL_FAST,
+                model=_MODEL_MAIN,
                 max_tokens=8000,
                 timeout=300.0,  # 5 minutes max
                 messages=[{"role": "user", "content": prompt}]
