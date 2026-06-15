@@ -155,6 +155,7 @@ class CVEnricher:
     def _track_create(self, **kwargs):
         """Appelle l'API Claude et enregistre les tokens consommes (compteur d'usage)."""
         client = self._get_anthropic_client()
+        kwargs.setdefault("temperature", 0)  # 0 = resultat le plus stable/reproductible (et moins d'hallucinations)
         resp = client.messages.create(**kwargs)
         try:
             u = getattr(resp, "usage", None)
