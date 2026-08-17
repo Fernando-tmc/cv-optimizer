@@ -641,7 +641,16 @@ def restore_session_from_cookies():
             if 'login_time' in session_data:
                 login_time = datetime.fromisoformat(session_data['login_time'])
                 if datetime.now() - login_time < timedelta(hours=8):
+                    uname = session_data.get('username', '')
+                    try:
+                        import auth_supabase as _auth
+                        if _auth.is_configured() and uname and not _auth.is_user_active(uname):
+                            return False  # compte désactivé -> on coupe la session
+                    except Exception:
+                        pass
                     st.session_state.authenticated = True
+                    st.session_state.username = uname
+                    st.session_state.role = session_data.get('role', 'user')
                     st.session_state.login_time = login_time
                     st.session_state.last_activity = datetime.now()
                     return True
@@ -653,7 +662,9 @@ def save_session_to_cookies():
     """Save session to cookies"""
     try:
         session_data = {
-            'login_time': st.session_state.login_time.isoformat()
+            'login_time': st.session_state.login_time.isoformat(),
+            'username': st.session_state.get('username', ''),
+            'role': st.session_state.get('role', 'user'),
         }
         cookie_manager.set('cv_session', session_data, max_age=28800)  # 8 hours
     except:
@@ -663,6 +674,8 @@ def clear_session():
     """Clear session and cookies"""
     st.session_state.authenticated = False
     st.session_state.login_time = None
+    st.session_state.username = None
+    st.session_state.role = None
     st.session_state.matching_done = False
     st.session_state.matching_data = None
     st.session_state.cv_file = None
@@ -678,6 +691,57 @@ def clear_session():
 # ==========================================
 # 🔓 LOGIN SCREEN
 # ==========================================
+
+def show_admin_users_panel():
+    """Gestion des comptes - réservé au rôle admin."""
+    import auth_supabase as _auth
+    st.markdown("#### ➕ Créer un compte")
+    with st.form("create_user_form", clear_on_submit=True):
+        nu = st.text_input("Identifiant")
+        npw = st.text_input("Mot de passe", type="password")
+        nrole = st.selectbox("Rôle", ["user", "admin"])
+        if st.form_submit_button("Créer le compte"):
+            if nu and npw:
+                try:
+                    _auth.create_user(nu, npw, role=nrole)
+                    st.success(f"Compte « {nu} » créé.")
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+            else:
+                st.warning("Identifiant et mot de passe requis.")
+
+    st.markdown("#### 👥 Comptes existants")
+    try:
+        users = _auth.list_users()
+    except Exception as e:
+        st.error(f"Impossible de charger les comptes : {e}")
+        return
+    for u in users:
+        c1, c2, c3 = st.columns([4, 2, 2])
+        c1.write(f"**{u['username']}** · {u.get('role', 'user')}")
+        c2.write("🟢 Actif" if u.get('is_active') else "🔴 Désactivé")
+        label = "Désactiver" if u.get('is_active') else "Réactiver"
+        if c3.button(label, key=f"toggle_{u['id']}"):
+            try:
+                _auth.set_active(u['id'], not u.get('is_active'))
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur : {e}")
+
+    st.markdown("#### 🔑 Réinitialiser un mot de passe")
+    with st.form("reset_pw_form", clear_on_submit=True):
+        unames = [u['username'] for u in users]
+        target = st.selectbox("Compte", unames) if unames else None
+        newpw = st.text_input("Nouveau mot de passe", type="password")
+        if st.form_submit_button("Réinitialiser") and target and newpw:
+            uid = next((u['id'] for u in users if u['username'] == target), None)
+            if uid:
+                try:
+                    _auth.set_password(uid, newpw)
+                    st.success("Mot de passe réinitialisé.")
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
 
 def show_login_screen():
     """Display login screen"""
@@ -708,28 +772,43 @@ def show_login_screen():
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("### 🔐 Authentication")
-        
-        password = st.text_input(
-            "Password",
-            type="password",
-            key="password_input"
-        )
-        
-        if st.button("🚀 Access CV Optimizer", use_container_width=True):
-            correct_password = os.getenv('APP_PASSWORD') or st.secrets.get("APP_PASSWORD", "")
-            
-            if not correct_password:
-                st.error("❌ Password not configured on server. Contact administrator.")
-            elif password != correct_password:
-                st.error("❌ Incorrect password. Please try again.")
-            else:
-                st.session_state.authenticated = True
-                st.session_state.login_time = datetime.now()
-                st.session_state.last_activity = datetime.now()
-                
-                save_session_to_cookies()
-                st.rerun()
+        st.markdown("### 🔐 Connexion")
+        import auth_supabase as _auth
+        if _auth.is_configured():
+            try:
+                _auth.ensure_bootstrap_admin()
+            except Exception:
+                pass
+            username = st.text_input("Identifiant", key="login_user")
+            password = st.text_input("Mot de passe", type="password", key="login_pass")
+            if st.button("🚀 Se connecter", use_container_width=True):
+                user = _auth.authenticate(username, password)
+                if user:
+                    st.session_state.authenticated = True
+                    st.session_state.username = user.get('username', username)
+                    st.session_state.role = user.get('role', 'user')
+                    st.session_state.login_time = datetime.now()
+                    st.session_state.last_activity = datetime.now()
+                    save_session_to_cookies()
+                    st.rerun()
+                else:
+                    st.error("❌ Identifiant/mot de passe incorrect, ou compte désactivé.")
+        else:
+            # Repli : mot de passe unique (tant que Supabase n'est pas configuré)
+            password = st.text_input("Password", type="password", key="password_input")
+            if st.button("🚀 Access CV Optimizer", use_container_width=True):
+                correct_password = os.getenv('APP_PASSWORD') or st.secrets.get("APP_PASSWORD", "")
+                if not correct_password:
+                    st.error("❌ Password not configured on server. Contact administrator.")
+                elif password != correct_password:
+                    st.error("❌ Incorrect password. Please try again.")
+                else:
+                    st.session_state.authenticated = True
+                    st.session_state.role = 'user'
+                    st.session_state.login_time = datetime.now()
+                    st.session_state.last_activity = datetime.now()
+                    save_session_to_cookies()
+                    st.rerun()
     
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     st.markdown("""
@@ -799,6 +878,9 @@ def main_app():
             pass
     
     # ========== MAIN CONTENT ==========
+    if st.session_state.get('role') == 'admin':
+        with st.expander("👑 Administration — gestion des comptes"):
+            show_admin_users_panel()
     st.markdown(f"""
     <div class="tmc-hero">
         <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 0.5rem;">
