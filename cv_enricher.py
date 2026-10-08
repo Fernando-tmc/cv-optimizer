@@ -156,7 +156,12 @@ class CVEnricher:
         """Appelle l'API Claude et enregistre les tokens consommes (compteur d'usage)."""
         client = self._get_anthropic_client()
         kwargs.setdefault("temperature", 0)  # 0 = resultat le plus stable/reproductible (et moins d'hallucinations)
-        resp = client.messages.create(**kwargs)
+        # Streaming : obligatoire pour les longues reponses (CV de 10-20 pages) et evite les
+        # coupures de connexion HTTP pendant une generation longue. Resultat identique a create().
+        with client.messages.stream(**kwargs) as _s:
+            resp = _s.get_final_message()
+        if getattr(resp, "stop_reason", None) == "max_tokens":
+            print(f">>> WARNING: reponse IA tronquee (max_tokens={kwargs.get('max_tokens')})", flush=True)
         try:
             u = getattr(resp, "usage", None)
             if u is not None:
@@ -450,13 +455,13 @@ RÈGLES CRITIQUES:
 - Pour les diplômes: nom COMPLET + année EXACTE
 - Extrait TOUT (ne rate rien)
 - Si une section est vide, mets une liste vide []
-- Format JSON strict uniquement"""
+- Format JSON strict uniquement, COMPACT (sur une seule ligne, sans indentation ni retours a la ligne)"""
 
             print(f">>> Calling Claude (Sonnet) for parsing...", flush=True)
             response = self._track_create(
                 model=_MODEL_MAIN,
-                max_tokens=8000,
-                timeout=300.0,  # 5 minutes max
+                max_tokens=32000,  # CV longs (10-20+ pages) : 8000 tronquait le JSON -> CV vide
+                timeout=900.0,
                 messages=[{"role": "user", "content": prompt}]
             )
             print(f">>> API call completed successfully", flush=True)
@@ -465,6 +470,9 @@ RÈGLES CRITIQUES:
             print(f">>> ERROR calling anthropic for parsing: {repr(e)}", flush=True)
             return {}
         
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            print(">>> ERROR: parsing tronque (CV trop long)", flush=True)
+            return {}
         response_text = response.content[0].text.strip()
         
         # Nettoyer JSON
@@ -1260,7 +1268,7 @@ IMPORTANT FINAL - RÈGLES JSON STRICTES:
 - Vérifie que TOUTES les accolades et crochets sont fermés
 - Si tu hésites sur un champ, mets une valeur par défaut plutôt qu'une erreur
 
-Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
+Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentation), sans rien d'autre avant ou après."""
 
             else:
                 # ============================================
@@ -1579,13 +1587,13 @@ IMPORTANT FINAL - RÈGLES JSON STRICTES:
 - Vérifie que TOUTES les accolades et crochets sont fermés
 - Si tu hésites sur un champ, mets une valeur par défaut plutôt qu'une erreur
 
-Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
+Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentation), sans rien d'autre avant ou après."""
 
-            print(f">>> Calling Claude API for enrichment with timeout=300s...", flush=True)
+            print(f">>> Calling Claude API for enrichment...", flush=True)
             response = self._track_create(
                 model="claude-sonnet-4-5-20250929",
-                max_tokens=8000,
-                timeout=300.0,  # 5 minutes max
+                max_tokens=32000,  # CV longs : 8000 tronquait le JSON
+                timeout=900.0,
                 messages=[{"role": "user", "content": prompt}]
             )
             print(f">>> Enrichment API call completed successfully", flush=True)
@@ -1601,6 +1609,10 @@ Réponds UNIQUEMENT avec du JSON pur, sans rien d'autre avant ou après."""
             print(f">>> FULL TRACEBACK:\n{traceback.format_exc()}", flush=True)
             return {}
         
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            # JSON coupe : inutile de demander une "reparation" (3 appels de plus = tres lent)
+            print(">>> ERROR: enrichissement tronque (CV trop long)", flush=True)
+            return {}
         print(f">>> API Response received, extracting text...", flush=True)
         response_text = response.content[0].text.strip()
         print(f">>> Response length: {len(response_text)} characters", flush=True)
@@ -1640,8 +1652,8 @@ Return the corrected JSON directly:"""
                     
                     fix_response = self._track_create(
                         model="claude-sonnet-4-5-20250929",
-                        max_tokens=8000,
-                        timeout=300.0,  # Same as main enrichment call
+                        max_tokens=32000,
+                        timeout=900.0,
                         messages=[{"role": "user", "content": fix_prompt}]
                     )
                     

@@ -1029,6 +1029,11 @@ def process_cv_matching():
         
         # Step 2: Parsing
         parsed_cv = enricher.parse_cv_with_claude(cv_text)
+        if not parsed_cv or not (parsed_cv.get('experiences') or parsed_cv.get('competences')):
+            timeline_placeholder.empty()
+            st.session_state.processing = False
+            st.error("❌ Le CV n'a pas pu être analysé (lecture IA incomplète). Le tableau de matching n'a pas été produit. Réessayez ; si le problème persiste, le CV est peut-être illisible (scan de mauvaise qualité).")
+            return
         
         # Step 3: Matching Analysis
         jd_text = enricher.read_job_description(str(jd_path))
@@ -1322,6 +1327,10 @@ def process_cv_generation():
         cv_path = save_uploaded(st.session_state.cv_file)
         cv_text = enricher.extract_cv_text(str(cv_path))
         parsed_cv = enricher.parse_cv_with_claude(cv_text)
+        if not parsed_cv or not (parsed_cv.get('experiences') or parsed_cv.get('competences')):
+            st.session_state.processing = False
+            st.error("❌ Le CV n'a pas pu être analysé (lecture IA incomplète). Aucun CV n'a été généré, pour éviter un document vide. Réessayez ; si le problème persiste, le CV est peut-être illisible (scan de mauvaise qualité).")
+            return
         jd_text = ""
         if st.session_state.jd_file:
             jd_path = save_uploaded(st.session_state.jd_file)
