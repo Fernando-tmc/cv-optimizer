@@ -438,7 +438,14 @@ class CVEnricher:
                     "experience avec \"periode\", \"entreprise\" et \"poste\" VIDES (\"\"). N'invente aucun en-tete. "
                     "Si le nom, le lieu ou les langues n'apparaissent pas dans cette partie, mets \"\" ou [] "
                     "(ignore la consigne 'OBLIGATOIRE' pour ces champs).]\n\n")
-            return self._parse_cv_single(note + chunks[i])
+            ctx = ""
+            if i > 0:
+                ctx = ("[CONTEXTE — fin de la partie precedente, DEJA extraite, NE PAS la re-extraire. "
+                       "Sert uniquement a savoir dans quelle SECTION commence ta partie (experience, formation, "
+                       "certifications/formations continues...) :]\n" + chunks[i-1][-1500:] +
+                       "\n[FIN DU CONTEXTE — ta partie a extraire commence ci-dessous. Si elle commence au milieu "
+                       "d'une liste de formations/certifications, mets ces elements dans \"certifications\".]\n\n")
+            return self._parse_cv_single(note + ctx + chunks[i])
         with ThreadPoolExecutor(max_workers=min(self._CHUNK_WORKERS, n)) as ex:
             parts = list(ex.map(_job, range(n)))
         if any(not p for p in parts):
@@ -462,9 +469,21 @@ class CVEnricher:
             if size >= target:
                 cut = None
                 lo = int(len(cur) * 0.6)
-                for j in range(len(cur) - 1, lo, -1):
-                    if date_hdr.search(cur[j]):
-                        cut = j; break
+                def _ok(j, strict):
+                    ln = cur[j].strip()
+                    if not ln or ln.startswith(('•', '-', '*', '·', '\uf0b7')):
+                        return False
+                    is_section = len(ln) > 5 and ln.isupper() and not any(c.isdigit() for c in ln)
+                    starts_block = not cur[j - 1].strip()
+                    if strict:
+                        return is_section or (bool(date_hdr.search(ln)) and starts_block)
+                    return bool(date_hdr.search(ln))
+                for strict in (True, False):
+                    for j in range(len(cur) - 1, lo, -1):
+                        if _ok(j, strict):
+                            cut = j; break
+                    if cut:
+                        break
                 if cut:
                     chunks.append("\n".join(cur[:cut])); cur = cur[cut:]
                 else:
@@ -1177,8 +1196,18 @@ Return the corrected JSON directly:"""
                              for k, i in enumerate(idx))
 
         def _job(b):
+            if b == -1:
+                note = ("⚡ CONSIGNE DE DÉCOUPAGE (prioritaire) : ce CV est long et rédigé en plusieurs appels en parallèle. "
+                        "Pour CET appel, rédige titre, profil, mots-clés, COMPÉTENCES (5-6 catégories, obligatoires, "
+                        "à partir du CV COMPLET), formation et projets. Mets \"experiences_enrichies\" à [] "
+                        "(les expériences sont rédigées séparément).")
+                try:
+                    return self.enrich_cv_with_prompt(parsed_cv, jd_text, extra_instruction=note, **kw)
+                except Exception as e:
+                    print(f">>> ERROR appel global: {e!r}", flush=True)
+                    return {}
             idx = batches[b]
-            if b == 0:
+            if False:
                 note = ("⚡ CONSIGNE DE DÉCOUPAGE (prioritaire) : ce CV est long et rédigé en plusieurs paquets en parallèle. "
                         "Rédige normalement titre, profil, mots-clés, compétences (à partir du CV COMPLET), formation et projets. "
                         "MAIS dans \"experiences_enrichies\", rédige UNIQUEMENT ces expériences, dans cet ordre "
@@ -1196,10 +1225,10 @@ Return the corrected JSON directly:"""
                 return {}
 
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(6, len(batches))) as ex:
-            results = list(ex.map(_job, range(len(batches))))
-
-        main = results[0] or {}
+        with ThreadPoolExecutor(max_workers=min(7, len(batches) + 1)) as ex:
+            futs = [ex.submit(_job, b) for b in [-1] + list(range(len(batches)))]
+            out = [f.result() for f in futs]
+        main, results = (out[0] or {}), out[1:]
         if not main:
             print(">>> ERROR: paquet principal vide", flush=True)
             return {}
@@ -2031,7 +2060,19 @@ Return the corrected JSON directly:"""
         # Si competences_enrichies est un dict (nouveau format), l'utiliser directement
         if isinstance(competences_enrichies, dict):
             # Supprimer la clé "NOTE" si présente
-            skills_categorized = {k: v for k, v in competences_enrichies.items() if k != 'NOTE' and isinstance(v, list)}
+            skills_categorized = {}
+            for k, v in competences_enrichies.items():
+                if k == 'NOTE':
+                    continue
+                if isinstance(v, str) and v.strip():
+                    v = [x.strip(' -•') for x in v.split('\n') if x.strip(' -•')]
+                if isinstance(v, list) and v:
+                    skills_categorized[k] = v
+            if not skills_categorized and parsed_cv.get('competences'):
+                print(">>> WARNING: competences enrichies vides -> competences du CV source", flush=True)
+                _c = [c for c in parsed_cv.get('competences', []) if isinstance(c, str)]
+                _lbl = 'Compétences' if template_lang == 'FR' else 'Skills'
+                skills_categorized = {_lbl: _c[:15]}
         else:
             # Fallback ancien format (liste simple)
             competences = competences_enrichies if isinstance(competences_enrichies, list) else parsed_cv.get('competences', [])
@@ -2152,7 +2193,11 @@ Return the corrected JSON directly:"""
             }
             langues_list = [langue_map.get(lang, lang) for lang in langues_list]
         
-        langues = ', '.join(langues_list)
+        _ns = {'not specified', 'non spécifié', 'non specifie', 'location not specified', ''}
+        langues_list = [l for l in langues_list if str(l).strip().lower() not in _ns]
+        langues = ', '.join(langues_list) if langues_list else ('Non précisé' if template_lang == 'FR' else 'Not specified')
+        if str(lieu_residence).strip().lower() in _ns:
+            lieu_residence = 'Non précisé' if template_lang == 'FR' else 'Not specified'
         
         context = {
             # Pour le header (minuscules) - PAS d'échappement
