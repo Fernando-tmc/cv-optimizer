@@ -468,10 +468,12 @@ RÈGLES CRITIQUES:
             
         except Exception as e:
             print(f">>> ERROR calling anthropic for parsing: {repr(e)}", flush=True)
+            self.last_error = e
             return {}
         
         if getattr(response, "stop_reason", None) == "max_tokens":
             print(">>> ERROR: parsing tronque (CV trop long)", flush=True)
+            self.last_error = "CV trop long pour être analysé en une fois."
             return {}
         response_text = response.content[0].text.strip()
         
@@ -2615,3 +2617,19 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def friendly_api_error(err) -> str:
+    """Traduit une erreur technique de l'API en message clair pour l'utilisateur."""
+    if not err:
+        return "Cause inconnue (voir les journaux du serveur)."
+    t = str(err).lower()
+    if "credit balance" in t or "billing" in t:
+        return "Le crédit de l'API Anthropic (IA) est épuisé. Contactez l'administrateur pour recharger le compte."
+    if "authentication" in t or "api key" in t or "401" in t:
+        return "La clé de l'API Anthropic est invalide ou absente. Contactez l'administrateur."
+    if "overloaded" in t or "529" in t or "rate" in t or "429" in t:
+        return "Le service IA est temporairement surchargé. Réessayez dans quelques minutes."
+    if "timeout" in t or "timed out" in t:
+        return "Le service IA a mis trop de temps à répondre. Réessayez."
+    return str(err)

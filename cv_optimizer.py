@@ -989,7 +989,7 @@ def main_app():
 
     if st.session_state.get('run_generate'):
         st.session_state.run_generate = False
-        with st.spinner("📝 Génération du CV en cours… (30–60 s, merci de patienter)"):
+        with st.spinner("📝 Génération du CV en cours… (1 à 5 min selon la longueur du CV, merci de patienter)"):
             process_cv_generation()
 
     # Résultats du matching (si déjà calculé)
@@ -1032,7 +1032,8 @@ def process_cv_matching():
         if not parsed_cv or not (parsed_cv.get('experiences') or parsed_cv.get('competences')):
             timeline_placeholder.empty()
             st.session_state.processing = False
-            st.error("❌ Le CV n'a pas pu être analysé (lecture IA incomplète). Le tableau de matching n'a pas été produit. Réessayez ; si le problème persiste, le CV est peut-être illisible (scan de mauvaise qualité).")
+            from cv_enricher import friendly_api_error
+            st.error("❌ Le CV n'a pas pu être analysé : " + friendly_api_error(getattr(enricher, 'last_error', None)) + " — Le tableau de matching n'a pas été produit.")
             return
         
         # Step 3: Matching Analysis
@@ -1329,7 +1330,8 @@ def process_cv_generation():
         parsed_cv = enricher.parse_cv_with_claude(cv_text)
         if not parsed_cv or not (parsed_cv.get('experiences') or parsed_cv.get('competences')):
             st.session_state.processing = False
-            st.error("❌ Le CV n'a pas pu être analysé (lecture IA incomplète). Aucun CV n'a été généré, pour éviter un document vide. Réessayez ; si le problème persiste, le CV est peut-être illisible (scan de mauvaise qualité).")
+            from cv_enricher import friendly_api_error
+            st.error("❌ Le CV n'a pas pu être analysé : " + friendly_api_error(getattr(enricher, 'last_error', None)) + " — Aucun CV n'a été généré, pour éviter un document vide.")
             return
         jd_text = ""
         if st.session_state.jd_file:
