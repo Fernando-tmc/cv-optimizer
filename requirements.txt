@@ -14,3 +14,4 @@ python-dotenv
 pytesseract==0.3.10
 pdf2image==1.17.0
 Pillow==10.1.0
+json-repair==0.63.5

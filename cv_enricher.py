@@ -58,6 +58,22 @@ def _save_stats(d):
         pass
 
 import threading as _threading
+
+def _loads_robust(text):
+    """json.loads, puis reparation LOCALE (guillemet/virgule oublies) sans rappeler l'IA."""
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        import json_repair
+        obj = json_repair.loads(text)
+        if isinstance(obj, dict) and obj:
+            print(">>> JSON repare localement (json_repair)", flush=True)
+            return obj
+    except Exception as e:
+        print(f">>> json_repair indisponible/echec: {e!r}", flush=True)
+    raise json.JSONDecodeError("JSON invalide meme apres reparation locale", text or "", 0)
 _STATS_LOCK = _threading.Lock()
 
 def record_api_usage(input_tokens, output_tokens):
@@ -601,7 +617,7 @@ RÈGLES CRITIQUES:
         response_text = response_text.strip()
         
         try:
-            parsed_data = json.loads(response_text)
+            parsed_data = _loads_robust(response_text)
             print(f"✅ Parsing réussi!")
             print(f"   Nom: [ANONYMIZED]")
             print(f"   Langues: {', '.join(parsed_data.get('langues', []))}")
@@ -975,7 +991,7 @@ Génère l'analyse maintenant:"""
             
             # Parser le JSON
             try:
-                matching_result = json.loads(response_text)
+                matching_result = _loads_robust(response_text)
                 print(f">>> JSON parsed successfully!", flush=True)
                 
                 # V1.3.5 FIX ULTIME: Recalculer TOUS les scores pondérés pour garantir cohérence
@@ -1140,13 +1156,73 @@ Return the corrected JSON directly:"""
                 'synthese_matching': f'Erreur lors de l\'analyse: {str(e)}'
             }
     
+    _EXP_BATCH = 6       # experiences par paquet
+    _EXP_PARALLEL_MIN = 9  # en dessous : un seul appel (CV normaux inchanges)
+
+    def enrich_cv_parallel(self, parsed_cv, jd_text, language="French",
+                           matching_analysis=None, force_simple=False):
+        """CV long : redaction des experiences en paquets EN PARALLELE.
+        Chaque appel voit le CV COMPLET (coherence) mais ne redige que son paquet.
+        Le paquet 1 redige aussi titre, profil, competences, formation."""
+        exps = parsed_cv.get('experiences') or []
+        kw = dict(language=language, matching_analysis=matching_analysis, force_simple=force_simple)
+        if len(exps) < self._EXP_PARALLEL_MIN:
+            return self.enrich_cv_with_prompt(parsed_cv, jd_text, **kw)
+        B = self._EXP_BATCH
+        batches = [list(range(i, min(i + B, len(exps)))) for i in range(0, len(exps), B)]
+        print(f">>> Redaction en {len(batches)} paquets paralleles ({len(exps)} experiences)", flush=True)
+
+        def _desc(idx):
+            return "\n".join(f"  {k+1}) {exps[i].get('periode','')} | {exps[i].get('entreprise','')} | {exps[i].get('poste','')}"
+                             for k, i in enumerate(idx))
+
+        def _job(b):
+            idx = batches[b]
+            if b == 0:
+                note = ("⚡ CONSIGNE DE DÉCOUPAGE (prioritaire) : ce CV est long et rédigé en plusieurs paquets en parallèle. "
+                        "Rédige normalement titre, profil, mots-clés, compétences (à partir du CV COMPLET), formation et projets. "
+                        "MAIS dans \"experiences_enrichies\", rédige UNIQUEMENT ces expériences, dans cet ordre "
+                        "(les autres sont rédigées séparément, ne les inclus pas) :\n" + _desc(idx))
+            else:
+                note = ("⚡ CONSIGNE DE DÉCOUPAGE (prioritaire) : ce CV est long et rédigé en plusieurs paquets en parallèle. "
+                        "Pour CE paquet, rédige UNIQUEMENT \"experiences_enrichies\" pour ces expériences, dans cet ordre, "
+                        "avec exactement les mêmes règles de style et de fidélité :\n" + _desc(idx) +
+                        "\nMets \"titre_professionnel_enrichi\" et \"profil_enrichi\" à \"\", "
+                        "\"competences_enrichies\" à {}, \"mots_cles_a_mettre_en_gras\", \"formation_enrichie\" et \"projets_enrichis\" à [].")
+            try:
+                return self.enrich_cv_with_prompt(parsed_cv, jd_text, extra_instruction=note, **kw)
+            except Exception as e:
+                print(f">>> ERROR paquet {b+1}: {e!r}", flush=True)
+                return {}
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(batches))) as ex:
+            results = list(ex.map(_job, range(len(batches))))
+
+        main = results[0] or {}
+        if not main:
+            print(">>> ERROR: paquet principal vide", flush=True)
+            return {}
+        all_exp = []
+        for b, r in enumerate(results):
+            got = (r or {}).get('experiences_enrichies') or []
+            if not got:
+                # Filet de securite : on garde les experiences d'origine plutot que de les perdre
+                print(f">>> WARNING: paquet {b+1} vide -> experiences d'origine conservees", flush=True)
+                got = [exps[i] for i in batches[b]]
+            all_exp.extend(got)
+        main['experiences_enrichies'] = all_exp
+        print(f"✅ Redaction fusionnee: {len(all_exp)} experiences", flush=True)
+        return main
+
     def enrich_cv_with_prompt(
         self, 
         parsed_cv: Dict[str, Any], 
         jd_text: str, 
         language: str = "French",
         matching_analysis: Dict[str, Any] = None,  # réutiliser un matching préalable
-        force_simple: bool = False  # forcer le prompt simplifié (génération directe, 1 appel)
+        force_simple: bool = False,  # forcer le prompt simplifié (génération directe, 1 appel)
+        extra_instruction: str = None  # consigne ajoutee (redaction en paquets paralleles)
     ) -> Dict[str, Any]:
         """
         Enrichir le CV avec l'IA
@@ -1705,6 +1781,8 @@ IMPORTANT FINAL - RÈGLES JSON STRICTES:
 
 Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentation), sans rien d'autre avant ou après."""
 
+            if extra_instruction:
+                prompt += "\n\n" + extra_instruction
             print(f">>> Calling Claude API for enrichment...", flush=True)
             response = self._track_create(
                 model="claude-sonnet-4-5-20250929",
@@ -1753,7 +1831,7 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
             try:
                 if attempt == 0:
                     # Première tentative: parsing direct
-                    enriched = json.loads(response_text)
+                    enriched = _loads_robust(response_text)
                     print(f">>> JSON parsed successfully on first attempt!", flush=True)
                     break
                 else:

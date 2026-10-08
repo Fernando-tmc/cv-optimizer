@@ -1375,7 +1375,7 @@ def generate_cv(data):
         
         timeline_placeholder.markdown(horizontal_progress_timeline(1, 3, generation_steps), unsafe_allow_html=True)
         
-        enriched_cv = enricher.enrich_cv_with_prompt(
+        enriched_cv = enricher.enrich_cv_parallel(
             data['parsed_cv'],
             data['jd_text'],
             language=st.session_state.selected_language,
