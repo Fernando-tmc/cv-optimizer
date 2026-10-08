@@ -57,7 +57,14 @@ def _save_stats(d):
     except Exception:
         pass
 
+import threading as _threading
+_STATS_LOCK = _threading.Lock()
+
 def record_api_usage(input_tokens, output_tokens):
+    with _STATS_LOCK:
+        _record_api_usage_unlocked(input_tokens, output_tokens)
+
+def _record_api_usage_unlocked(input_tokens, output_tokens):
     d = _load_stats()
     d["api_calls"] += 1
     d["input_tokens"] += int(input_tokens or 0)
@@ -392,7 +399,114 @@ class CVEnricher:
     # MODULE 2 : PARSING INTELLIGENT
     # ========================================
     
+    # Au-dela de cette taille, le CV est lu en plusieurs morceaux EN PARALLELE
+    # (meme qualite : chaque morceau est lu integralement par Sonnet, mais 3-4x plus vite).
+    _CHUNK_THRESHOLD = 14000
+    _CHUNK_TARGET = 15000
+    _CHUNK_WORKERS = 5
+
     def parse_cv_with_claude(self, cv_text: str) -> Dict[str, Any]:
+        """Parse le CV. CV court : 1 appel. CV long : morceaux lus en parallele puis fusionnes."""
+        self.last_error = None
+        if len(cv_text or "") <= self._CHUNK_THRESHOLD:
+            return self._parse_cv_single(cv_text)
+        chunks = self._split_cv_text(cv_text)
+        n = len(chunks)
+        print(f">>> CV long ({len(cv_text)} car.) -> lecture en {n} morceaux en parallele", flush=True)
+        from concurrent.futures import ThreadPoolExecutor
+        def _job(i):
+            note = (f"[NOTE : ceci est la PARTIE {i+1}/{n} d'un CV long decoupe en morceaux. "
+                    "Extrait uniquement ce qui figure dans CETTE partie. "
+                    "Si le texte commence par des puces/responsabilites appartenant a une experience "
+                    "commencee dans la partie precedente (sans en-tete date/entreprise/poste), place-les dans une "
+                    "experience avec \"periode\", \"entreprise\" et \"poste\" VIDES (\"\"). N'invente aucun en-tete. "
+                    "Si le nom, le lieu ou les langues n'apparaissent pas dans cette partie, mets \"\" ou [] "
+                    "(ignore la consigne 'OBLIGATOIRE' pour ces champs).]\n\n")
+            return self._parse_cv_single(note + chunks[i])
+        with ThreadPoolExecutor(max_workers=min(self._CHUNK_WORKERS, n)) as ex:
+            parts = list(ex.map(_job, range(n)))
+        if any(not p for p in parts):
+            print(">>> ERROR: au moins un morceau n'a pas pu etre lu", flush=True)
+            return {}
+        merged = self._merge_parsed_parts(parts)
+        print(f"✅ Fusion: {len(merged.get('experiences', []))} experiences, "
+              f"{len(merged.get('competences', []))} competences", flush=True)
+        return merged
+
+    @staticmethod
+    def _split_cv_text(text: str, target: int = None) -> list:
+        """Decoupe aux fins de ligne, de preference juste avant un en-tete daté (ex: 'May 2023 - ...')."""
+        import re as _re
+        target = target or CVEnricher._CHUNK_TARGET
+        date_hdr = _re.compile(r"(19|20)\d\d\s*[-–—]|[-–—]\s*(19|20)\d\d|(19|20)\d\d\s*(to|à|au)\s", _re.I)
+        lines = text.split("\n")
+        chunks, cur, size = [], [], 0
+        for ln in lines:
+            cur.append(ln); size += len(ln) + 1
+            if size >= target:
+                cut = None
+                lo = int(len(cur) * 0.6)
+                for j in range(len(cur) - 1, lo, -1):
+                    if date_hdr.search(cur[j]):
+                        cut = j; break
+                if cut:
+                    chunks.append("\n".join(cur[:cut])); cur = cur[cut:]
+                else:
+                    chunks.append("\n".join(cur)); cur = []
+                size = sum(len(x) + 1 for x in cur)
+        if cur:
+            if chunks and size < target * 0.25:
+                chunks[-1] += "\n" + "\n".join(cur)
+            else:
+                chunks.append("\n".join(cur))
+        return chunks
+
+    @staticmethod
+    def _merge_parsed_parts(parts: list) -> Dict[str, Any]:
+        """Fusionne les morceaux dans l'ordre du CV (rien n'est perdu, doublons retires)."""
+        import json as _json
+        bad = {"", "location not specified", "not specified", "non spécifié", "non specifie"}
+        out = {"nom_complet": "", "titre_professionnel": "", "profil_resume": "", "lieu_residence": "",
+               "langues": [], "competences": [], "experiences": [], "formation": [],
+               "certifications": [], "projets": []}
+        for p in parts:
+            for k in ("nom_complet", "titre_professionnel", "profil_resume", "lieu_residence"):
+                v = (p.get(k) or "")
+                v = v.strip() if isinstance(v, str) else v
+                if not out[k] and isinstance(v, str) and v.lower() not in bad:
+                    out[k] = v
+            for k in ("langues", "competences"):
+                for v in (p.get(k) or []):
+                    if isinstance(v, str) and v.strip().lower() not in bad and \
+                       v.strip().lower() not in [x.lower() for x in out[k]]:
+                        out[k].append(v.strip())
+            for e in (p.get("experiences") or []):
+                if not isinstance(e, dict):
+                    continue
+                headless = not any((e.get(f) or "").strip() for f in ("periode", "entreprise", "poste"))
+                if headless and out["experiences"]:
+                    prev = out["experiences"][-1]
+                    prev["responsabilites"] = (prev.get("responsabilites") or []) + (e.get("responsabilites") or [])
+                    continue
+                last = out["experiences"][-1] if out["experiences"] else None
+                if last and all((last.get(f) or "").strip() == (e.get(f) or "").strip()
+                                for f in ("periode", "entreprise", "poste")):
+                    last["responsabilites"] = (last.get("responsabilites") or []) + (e.get("responsabilites") or [])
+                    continue
+                out["experiences"].append(e)
+            for k in ("formation", "certifications", "projets"):
+                seen = {_json.dumps(x, sort_keys=True, ensure_ascii=False) for x in out[k]}
+                for v in (p.get(k) or []):
+                    key = _json.dumps(v, sort_keys=True, ensure_ascii=False)
+                    if key not in seen:
+                        out[k].append(v); seen.add(key)
+        if not out["langues"]:
+            out["langues"] = ["Not specified"]
+        if not out["lieu_residence"]:
+            out["lieu_residence"] = "Location not specified"
+        return out
+
+    def _parse_cv_single(self, cv_text: str) -> Dict[str, Any]:
         """Parser le CV avec Claude pour extraire les infos structurées"""
         print("🤖 Parsing du CV avec Claude AI...", flush=True)
         
