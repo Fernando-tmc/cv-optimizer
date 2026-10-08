@@ -909,7 +909,7 @@ Retourne UNIQUEMENT un JSON avec cette structure (sans texte avant/après):
             "score": 10,
             "score_max": 20,
             "match": "bon",
-            "commentaire": "Justification FACTUELLE ultra-détaillée basée sur des éléments PRÉCIS du CV avec années d'expérience, projets, réalisations, metrics. Minimum 2-3 phrases complètes."
+            "commentaire": "Justification FACTUELLE ultra-détaillée basée sur des éléments PRÉCIS du CV avec années d'expérience, projets, réalisations, metrics. Minimum 2-3 phrases complètes. NE MENTIONNE JAMAIS le score, la note, les points ni le calcul (ex: INTERDIT 'Score: 45/100 → 11 points')."
         }}
     ],
     "synthese_matching": "COMPREHENSIVE PROFESSIONAL ANALYSIS (4-6 DETAILED PARAGRAPHS, 250-350 WORDS):
@@ -2870,3 +2870,20 @@ def friendly_api_error(err) -> str:
     if "timeout" in t or "timed out" in t:
         return "Le service IA a mis trop de temps à répondre. Réessayez."
     return str(err)
+
+
+_SCORE_SENT = re.compile(
+    r"\b(score|scor[ée]|note|notation|raw|brut)\b\s*:?\s*\d"   # "Score: 45", "Score 45/100"
+    r"|\d+(?:[.,]\d+)?\s*/\s*100\b"                            # "45/100"
+    r"|\d+(?:[.,]\d+)?\s*(?:points?|pts)\b"                     # "11 points"
+    r"|[×→]",                                                     # calculs "(45×25)/100 → 11"
+    re.I)
+
+def strip_score_mentions(text) -> str:
+    """Retire du commentaire toute phrase qui parle du score ou de son calcul.
+    Le score global reste affiche en haut de page uniquement."""
+    if not text:
+        return text or ""
+    parts = re.split(r"(?<=[.!?])\s+", str(text).strip())
+    kept = [p for p in parts if p and not _SCORE_SENT.search(p)]
+    return " ".join(kept).strip()

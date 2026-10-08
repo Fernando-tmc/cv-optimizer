@@ -1090,7 +1090,8 @@ def build_matching_report_docx(results, parsed_cv):
             c[0].text = str(d.get('domaine', ''))
             c[1].text = f"{d.get('poids', '')}%"
             c[2].text = f"{d.get('score', '')}/{d.get('score_max', '')}"
-            c[3].text = str(d.get('commentaire', ''))
+            from cv_enricher import strip_score_mentions
+            c[3].text = strip_score_mentions(d.get('commentaire', ''))
     synth = results.get('synthese_matching', '')
     if synth:
         doc.add_heading("Synthèse", level=2)
@@ -1176,7 +1177,8 @@ def display_matching_results(data):
             return f"{icon} {row['domaine']}"
         
         df_domaines['Domaine'] = df_domaines.apply(format_domain, axis=1)
-        df_domaines['Commentaire'] = df_domaines['commentaire']  # texte COMPLET (pas de troncature)
+        from cv_enricher import strip_score_mentions
+        df_domaines['Commentaire'] = df_domaines['commentaire'].apply(strip_score_mentions)  # texte complet, sans mention de score
         df_display = df_domaines[['Domaine', 'Commentaire']]
         
         def style_rows(row):
