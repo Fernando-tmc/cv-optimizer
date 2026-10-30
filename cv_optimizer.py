@@ -786,6 +786,8 @@ def show_login_screen():
                 user = _auth.authenticate(username, password)
                 print(f">>> LOGIN tentative '{username}' -> {'OK' if user else 'REFUSE'}", flush=True)
                 if user:
+                    st.session_state.login_error = None
+                    st.session_state.login_diag = None
                     st.session_state.authenticated = True
                     st.session_state.username = user.get('username', username)
                     st.session_state.role = user.get('role', 'user')
@@ -794,10 +796,15 @@ def show_login_screen():
                     save_session_to_cookies()
                     st.rerun()
                 else:
-                    st.error("❌ Identifiant/mot de passe incorrect, ou compte désactivé.")
+                    # Message memorise : il doit survivre aux relances automatiques de la page
                     _diag = _auth.diagnose()
-                    if _diag:
-                        st.warning("🔧 Problème de configuration détecté : " + _diag)
+                    print(f">>> LOGIN diagnostic: {_diag or 'config Supabase OK (identifiant ou mot de passe errone)'}", flush=True)
+                    st.session_state.login_error = "❌ Identifiant/mot de passe incorrect, ou compte désactivé."
+                    st.session_state.login_diag = _diag
+            if st.session_state.get('login_error'):
+                st.error(st.session_state.login_error)
+                if st.session_state.get('login_diag'):
+                    st.warning("🔧 Problème de configuration détecté : " + st.session_state.login_diag)
         else:
             # Repli : mot de passe unique (tant que Supabase n'est pas configuré)
             password = st.text_input("Password", type="password", key="password_input")
