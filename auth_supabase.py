@@ -37,7 +37,7 @@ _PBKDF2_ITERS = 200_000
 # Configuration
 # ----------------------------------------------------------------------
 def _cfg():
-    return os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
+    return (os.getenv("SUPABASE_URL") or "").strip(), (os.getenv("SUPABASE_KEY") or "").strip()
 
 
 def is_configured() -> bool:
@@ -46,9 +46,17 @@ def is_configured() -> bool:
     return bool(url and key and httpx is not None)
 
 
+def _root(url: str) -> str:
+    """Accepte https://xxx.supabase.co, avec ou sans '/', '/rest/v1' ou '/rest/v1/' a la fin."""
+    u = (url or "").strip().rstrip("/")
+    if u.endswith("/rest/v1"):
+        u = u[: -len("/rest/v1")]
+    return u.rstrip("/")
+
+
 def _base():
     url, _ = _cfg()
-    return f"{url.rstrip('/')}/rest/v1/{TABLE}"
+    return f"{_root(url)}/rest/v1/{TABLE}"
 
 
 def _headers(extra=None):
