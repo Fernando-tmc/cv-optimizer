@@ -600,6 +600,7 @@ cookie_manager = stx.CookieManager()
 # ==========================================
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
+    print(">>> NOUVELLE SESSION navigateur (page chargee/rechargee)", flush=True)
 if 'login_time' not in st.session_state:
     st.session_state.login_time = None
 if 'last_activity' not in st.session_state:
@@ -783,6 +784,7 @@ def show_login_screen():
             password = st.text_input("Mot de passe", type="password", key="login_pass")
             if st.button("🚀 Se connecter", use_container_width=True):
                 user = _auth.authenticate(username, password)
+                print(f">>> LOGIN tentative '{username}' -> {'OK' if user else 'REFUSE'}", flush=True)
                 if user:
                     st.session_state.authenticated = True
                     st.session_state.username = user.get('username', username)
