@@ -2879,7 +2879,8 @@ if __name__ == '__main__':
 def friendly_api_error(err) -> str:
     """Traduit une erreur technique de l'API en message clair pour l'utilisateur."""
     if not err:
-        return "Cause inconnue (voir les journaux du serveur)."
+        return ("aucune expérience ni compétence trouvée dans ce fichier. Vérifiez qu'il s'agit bien du CV "
+                "du candidat (et non d'un document vide, d'un modèle ou d'un CV TMC déjà généré).")
     t = str(err).lower()
     if "credit balance" in t or "billing" in t:
         return "Le crédit de l'API Anthropic (IA) est épuisé. Contactez l'administrateur pour recharger le compte."
