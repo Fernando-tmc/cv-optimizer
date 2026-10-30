@@ -166,3 +166,30 @@ def ensure_bootstrap_admin():
             create_user(au, ap, role="admin")
     except Exception:
         pass
+
+
+def diagnose() -> str:
+    """Retourne un message clair si la connexion a Supabase pose probleme, sinon ''."""
+    url, key = _cfg()
+    if not url or not key:
+        return "Variables SUPABASE_URL / SUPABASE_KEY absentes."
+    if not url.startswith("https://") or ".supabase.co" not in url:
+        return "SUPABASE_URL ne ressemble pas a une adresse Supabase (https://xxxx.supabase.co)."
+    if not key.startswith("eyJ"):
+        return ("SUPABASE_KEY n'est pas la cle 'service_role' legacy (elle doit commencer par eyJ…). "
+                "Supabase > Project Settings > API Keys > onglet 'Legacy API Keys'.")
+    try:
+        r = httpx.get(_base(), params={"select": "id", "limit": "1"}, headers=_headers(), timeout=15)
+    except Exception as e:
+        return f"Impossible de joindre Supabase ({e.__class__.__name__}). Projet en pause ? Verifier sur supabase.com."
+    if r.status_code in (401, 403):
+        return "Cle Supabase refusee (401/403) : verifier SUPABASE_KEY (cle service_role)."
+    if r.status_code == 404 or "PGRST205" in r.text or "does not exist" in r.text:
+        return "La table 'cv_users' n'existe pas : lancer le script SQL dans Supabase > SQL Editor."
+    if r.status_code != 200:
+        return f"Erreur Supabase {r.status_code} : {r.text[:150]}"
+    if len(r.json()) == 0:
+        if not (os.getenv("BOOTSTRAP_ADMIN_USER") and os.getenv("BOOTSTRAP_ADMIN_PASSWORD")):
+            return "La table est vide et BOOTSTRAP_ADMIN_USER / BOOTSTRAP_ADMIN_PASSWORD ne sont pas definis."
+        return "La table est vide : le compte admin n'a pas pu etre cree (recharger la page puis reessayer)."
+    return ""

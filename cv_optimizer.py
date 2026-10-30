@@ -793,6 +793,9 @@ def show_login_screen():
                     st.rerun()
                 else:
                     st.error("❌ Identifiant/mot de passe incorrect, ou compte désactivé.")
+                    _diag = _auth.diagnose()
+                    if _diag:
+                        st.warning("🔧 Problème de configuration détecté : " + _diag)
         else:
             # Repli : mot de passe unique (tant que Supabase n'est pas configuré)
             password = st.text_input("Password", type="password", key="password_input")
