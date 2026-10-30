@@ -858,6 +858,7 @@ def main_app():
             clear_session()
             st.rerun()
         
+        st.caption("Version 2026-10-30 · IA : Sonnet 5.5")
         # Logo at bottom of sidebar
         logo_path = "TMC big logo.png"
         
