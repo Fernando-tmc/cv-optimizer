@@ -28,15 +28,17 @@ print(">>> cv_enricher module loading", flush=True)
 import tempfile
 
 # Modèles : Sonnet (qualité) pour matching/enrichissement, Haiku (rapide) pour la lecture du CV
-_MODEL_MAIN = "claude-sonnet-4-5-20250929"
+# Sonnet 4.5 est retire le 30/11/2026 -> Sonnet 5.5. Modifiable sans code via la variable Render CLAUDE_MODEL
+# (ex. remettre "claude-sonnet-4-5-20250929" en cas de souci, tant qu'il existe).
+_MODEL_MAIN = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 _MODEL_FAST = "claude-haiku-4-5-20251001"
 
 # ==========================================
 # 📊 COMPTEUR D'USAGE (fichier - reset au redeploiement)
 # ==========================================
 _STATS_FILE = os.path.join(tempfile.gettempdir(), "cv_optimizer_usage.json")
-_PRICE_IN = 3.0 / 1_000_000    # Claude Sonnet 4.5 : $3 / MTok input
-_PRICE_OUT = 15.0 / 1_000_000  # $15 / MTok output
+_PRICE_IN = 2.0 / 1_000_000    # Claude Sonnet 5.5 : $2 / MTok input
+_PRICE_OUT = 10.0 / 1_000_000  # $10 / MTok output
 _STATS_DEFAULT = {"cv_count": 0, "matching_count": 0, "api_calls": 0,
                   "input_tokens": 0, "output_tokens": 0}
 
@@ -178,11 +180,29 @@ class CVEnricher:
     def _track_create(self, **kwargs):
         """Appelle l'API Claude et enregistre les tokens consommes (compteur d'usage)."""
         client = self._get_anthropic_client()
-        kwargs.setdefault("temperature", 0)  # 0 = resultat le plus stable/reproductible (et moins d'hallucinations)
+        model = str(kwargs.get("model", ""))
+        if model.startswith(("claude-sonnet-4", "claude-haiku-4", "claude-opus-4", "claude-3")):
+            kwargs.setdefault("temperature", 0)  # anciens modeles : resultat le plus stable/reproductible
+        else:
+            # Modeles 5.x : temperature interdite (erreur 400). On coupe la "reflexion" prealable
+            # (between_tools = reglage le plus bas) -> reponse texte directe, rapide, comme avant.
+            kwargs.pop("temperature", None)
+            eb = dict(kwargs.pop("extra_body", None) or {})
+            eb.setdefault("thinking", {"type": "between_tools"})
+            kwargs["extra_body"] = eb
         # Streaming : obligatoire pour les longues reponses (CV de 10-20 pages) et evite les
         # coupures de connexion HTTP pendant une generation longue. Resultat identique a create().
         with client.messages.stream(**kwargs) as _s:
             resp = _s.get_final_message()
+        # Ne garder que les blocs texte (au cas ou un bloc "thinking" serait renvoye) : le code lit content[0].text
+        try:
+            _txt = [b for b in (resp.content or []) if getattr(b, "type", "") == "text"]
+            if _txt and len(_txt) != len(resp.content):
+                resp.content = _txt
+        except Exception:
+            pass
+        if getattr(resp, "stop_reason", None) == "refusal":
+            raise RuntimeError("Le modele IA a refuse la demande (refusal).")
         if getattr(resp, "stop_reason", None) == "max_tokens":
             print(f">>> WARNING: reponse IA tronquee (max_tokens={kwargs.get('max_tokens')})", flush=True)
         try:
@@ -955,7 +975,7 @@ Génère l'analyse maintenant:"""
             for attempt in range(max_retries):
                 try:
                     response = self._track_create(
-                        model="claude-sonnet-4-5-20250929",
+                        model=_MODEL_MAIN,
                         max_tokens=4000,
                         timeout=900.0,  # 15 minutes
                         messages=[{"role": "user", "content": prompt}]
@@ -1099,7 +1119,7 @@ Return the corrected JSON directly:"""
                 for fix_attempt in range(2):
                     try:
                         fix_response = self._track_create(
-                            model="claude-sonnet-4-5-20250929",
+                            model=_MODEL_MAIN,
                             max_tokens=4000,
                             timeout=300.0,  # 5 minutes for fix
                             messages=[{"role": "user", "content": fix_prompt}]
@@ -1814,7 +1834,7 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
                 prompt += "\n\n" + extra_instruction
             print(f">>> Calling Claude API for enrichment...", flush=True)
             response = self._track_create(
-                model="claude-sonnet-4-5-20250929",
+                model=_MODEL_MAIN,
                 max_tokens=32000,  # CV longs : 8000 tronquait le JSON
                 timeout=900.0,
                 messages=[{"role": "user", "content": prompt}]
@@ -1874,7 +1894,7 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
 Return the corrected JSON directly:"""
                     
                     fix_response = self._track_create(
-                        model="claude-sonnet-4-5-20250929",
+                        model=_MODEL_MAIN,
                         max_tokens=32000,
                         timeout=900.0,
                         messages=[{"role": "user", "content": fix_prompt}]
@@ -2386,7 +2406,7 @@ Return the corrected JSON directly:"""
             "TEXTES (JSON): " + json.dumps(texts, ensure_ascii=False)
         )
         resp = self._track_create(
-            model="claude-sonnet-4-5-20250929", max_tokens=4000,
+            model=_MODEL_MAIN, max_tokens=4000,
             messages=[{"role": "user", "content": prompt}]
         )
         raw = resp.content[0].text.strip()
