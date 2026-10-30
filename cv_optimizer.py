@@ -108,13 +108,8 @@ def local_css():
             display: none !important;
         }}
         
-        [data-testid="stAlert"] {{
-            display: none !important;
-        }}
-        
-        div[data-testid="stNotification"] {{
-            display: none !important;
-        }}
+        /* NB : les messages d'alerte (st.error / st.warning / st.info) NE sont PLUS masques :
+           les masquer rendait toutes les erreurs invisibles ("rien ne se passe"). */
         
         .main [data-testid="stException"] {{
             display: none !important;
