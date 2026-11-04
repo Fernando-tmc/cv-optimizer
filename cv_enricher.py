@@ -1198,6 +1198,77 @@ Return the corrected JSON directly:"""
     _EXP_BATCH = 6       # experiences par paquet
     _EXP_PARALLEL_MIN = 9  # en dessous : un seul appel (CV normaux inchanges)
 
+    # ------------------------------------------------------------------
+    # Filet de securite langue : detecte les phrases dans la mauvaise langue et les traduit
+    # ------------------------------------------------------------------
+    _FR_W = {"de","des","du","la","le","les","et","pour","avec","dans","sur","au","aux","une","un","en","par","plus","d'un","d'une"}
+    _EN_W = {"the","and","of","for","with","in","on","to","a","an","by","from","across","including","over"}
+
+    @classmethod
+    def _guess_lang(cls, text):
+        import re as _re
+        t = _re.sub(r"\*\*", "", str(text or "")).lower()
+        words = _re.findall(r"[a-zàâçéèêëîïôûùüÿœ']+", t)
+        if len(words) < 4:
+            return None
+        fr = sum(w in cls._FR_W for w in words) + 2 * len(_re.findall(r"[àâçéèêëîïôûùüœ]", t))
+        en = sum(w in cls._EN_W for w in words)
+        if fr >= 3 and fr > en * 1.5:
+            return "fr"
+        if en >= 2 and en > fr * 1.5:
+            return "en"
+        return None
+
+    def _ensure_language(self, enriched, language):
+        """Traduit les textes rediges dans la mauvaise langue (profil, competences, responsabilites)."""
+        if not isinstance(enriched, dict):
+            return enriched
+        target = "fr" if str(language).lower().startswith(("fr", "fran")) else "en"
+        slots = []  # (getter, setter)
+        def add(container, key):
+            v = container.get(key) if isinstance(container, dict) else container[key]
+            if isinstance(v, str) and self._guess_lang(v) not in (None, target):
+                slots.append((container, key, v))
+        if isinstance(enriched.get("profil_enrichi"), str):
+            add(enriched, "profil_enrichi")
+        comp = enriched.get("competences_enrichies")
+        if isinstance(comp, dict):
+            for cat, items in comp.items():
+                if isinstance(items, list):
+                    for i in range(len(items)):
+                        add(items, i)
+        for exp in enriched.get("experiences_enrichies") or []:
+            if isinstance(exp, dict) and isinstance(exp.get("responsabilites"), list):
+                for i in range(len(exp["responsabilites"])):
+                    add(exp["responsabilites"], i)
+        if not slots:
+            return enriched
+        print(f">>> Filet langue : {len(slots)} texte(s) dans la mauvaise langue -> traduction en {language}", flush=True)
+        import json as _json, re as _re
+        texts = [t for _, _, t in slots]
+        prompt = ("Traduis CHAQUE texte ci-dessous en " + str(language) + ". Conserve EXACTEMENT les marqueurs **gras** "
+                  "autour des memes termes, ne traduis pas les noms propres, technologies, acronymes et noms d'outils. "
+                  + ("Pour les responsabilites, commence par un verbe d'action au passe (Led, Designed, Managed...). "
+                     if target == "en" else "Pour les responsabilites, garde un style nominal (Conception de..., Realisation de...). ")
+                  + "N'ajoute ni ne retire aucune information. Reponds UNIQUEMENT avec un tableau JSON de chaines, "
+                  "meme longueur et meme ordre que l'entree.\n\nTEXTES (JSON): " + _json.dumps(texts, ensure_ascii=False))
+        try:
+            resp = self._track_create(model=_MODEL_MAIN, max_tokens=16000, timeout=300.0,
+                                      messages=[{"role": "user", "content": prompt}])
+            raw = resp.content[0].text.strip()
+            m = _re.search(r"\[.*\]", raw, _re.S)
+            out = _loads_robust(m.group(0)) if m else None
+        except Exception as e:
+            print(f">>> Filet langue : echec ({e!r}) -> textes laisses tels quels", flush=True)
+            return enriched
+        if not isinstance(out, list) or len(out) != len(slots):
+            print(">>> Filet langue : format inattendu -> textes laisses tels quels", flush=True)
+            return enriched
+        for (container, key, _), new in zip(slots, out):
+            if isinstance(new, str) and new.strip():
+                container[key] = new
+        return enriched
+
     def enrich_cv_parallel(self, parsed_cv, jd_text, language="French",
                            matching_analysis=None, force_simple=False):
         """CV long : redaction des experiences en paquets EN PARALLELE.
@@ -1206,7 +1277,7 @@ Return the corrected JSON directly:"""
         exps = parsed_cv.get('experiences') or []
         kw = dict(language=language, matching_analysis=matching_analysis, force_simple=force_simple)
         if len(exps) < self._EXP_PARALLEL_MIN:
-            return self.enrich_cv_with_prompt(parsed_cv, jd_text, **kw)
+            return self._ensure_language(self.enrich_cv_with_prompt(parsed_cv, jd_text, **kw), language)
         B = self._EXP_BATCH
         batches = [list(range(i, min(i + B, len(exps)))) for i in range(0, len(exps), B)]
         print(f">>> Redaction en {len(batches)} paquets paralleles ({len(exps)} experiences)", flush=True)
@@ -1262,7 +1333,7 @@ Return the corrected JSON directly:"""
             all_exp.extend(got)
         main['experiences_enrichies'] = all_exp
         print(f"✅ Redaction fusionnee: {len(all_exp)} experiences", flush=True)
-        return main
+        return self._ensure_language(main, language)
 
     def enrich_cv_with_prompt(
         self, 
@@ -1335,6 +1406,16 @@ EXPÉRIENCES:
                 cv_text += f"- {cert_name} | {cert_org} | {cert_year}\n"
         
             # PROMPT ULTRA-RENFORCÉ POUR COHÉRENCE ABSOLUE
+            _is_fr = str(language).lower().startswith(("fr", "fran"))
+            if _is_fr:
+                style_rule = ('Style NOMINAL uniforme : chaque ligne commence par un nom d\'action ("Conception de…", '
+                              '"Réalisation de…", "Développement de…", "Migration de…", "Analyse de…")')
+                style_short = 'style NOMINAL ("Conception de…", "Réalisation de…")'
+            else:
+                style_rule = (f'Style uniforme EN {language.upper()} : chaque ligne commence par un VERBE D\'ACTION au passé '
+                              '("Led…", "Designed…", "Commissioned…", "Managed…", "Reviewed…"), sans "I"/"my". '
+                              'Les exemples français de ce prompt illustrent la STRUCTURE seulement : n\'écris RIEN en français.')
+                style_short = f'verbes d\'action au passé EN {language.upper()} ("Led…", "Designed…")'
             language_instruction = f"""
 🚨 RÈGLE ABSOLUE - LANGUE {language.upper()} 🚨
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1423,7 +1504,7 @@ Fais :
 2. PROFIL: paragraphe factuel de 4-5 lignes en {language}, reformulant le profil RÉEL (pas de superlatifs). 3-5 technologies réellement maîtrisées en **gras**.
 
 3. EXPÉRIENCES — reformulation LÉGÈRE (jamais de copié-collé mot à mot, jamais d'invention) :
-   - Style NOMINAL uniforme : chaque ligne commence par un nom d'action ("Conception de…", "Réalisation de…", "Développement de…", "Migration de…", "Analyse de…").
+   - {style_rule}.
    - JAMAIS à la 1re personne ("j'ai…"), JAMAIS à l'infinitif en tête ("Réaliser…").
    - Mêmes FAITS que le CV source, juste mieux formulés et homogènes.
    - Bullets courts (1 ligne), 4-6 par expérience max.
@@ -1524,7 +1605,7 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
 - Utilise UNIQUEMENT ce qui est RÉELLEMENT dans le CV source. INTERDIT d'ajouter compétence, techno, outil, chiffre ou résultat absent du CV.
 - La JD sert à choisir quels éléments VRAIS mettre en avant, JAMAIS à ajouter ce que le candidat n'a pas.
 - Ton sobre/factuel : INTERDIT les superlatifs et formules marketing ("exceptionnel", "expert reconnu", "passionné"...).
-- Expériences : style NOMINAL ("Conception de…", "Réalisation de…"), jamais à la 1re personne, jamais d'invention.
+- Expériences : {style_short}, jamais à la 1re personne, jamais d'invention.
 
 🎯 ANALYSE DE MATCHING PONDÉRÉE (ULTRA-CRITIQUE - COHÉRENCE ABSOLUE REQUISE):
 
@@ -1675,7 +1756,7 @@ Fais :
 
 3. N'ajoute AUCUN mot-clé de la JD que le candidat n'a pas (zéro invention)
 4. Garde les intitulés fidèles à la réalité
-5. EXPÉRIENCES : style NOMINAL uniforme ("Conception de…", "Réalisation de…"), jamais à la 1re personne ni à l'infinitif ; mêmes faits que le CV, bullets courts (1 ligne), 4-6 max
+5. EXPÉRIENCES : {style_short}, jamais à la 1re personne ; mêmes faits que le CV, bullets courts (1 ligne), 4-6 max
 
 Réponds en JSON STRICT (sans markdown) avec cette structure:
 {{
@@ -1832,6 +1913,10 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
 
             if extra_instruction:
                 prompt += "\n\n" + extra_instruction
+            prompt += ("\n\n🚨 RAPPEL FINAL — LANGUE DE SORTIE : " + str(language).upper() +
+                       ". TOUS les textes du JSON (titre, profil, descriptions de compétences, responsabilités) "
+                       "doivent être rédigés en " + str(language) + ", même si le CV source ou les exemples de ce prompt "
+                       "sont dans une autre langue. Seuls les noms propres, technologies et acronymes restent tels quels.")
             print(f">>> Calling Claude API for enrichment...", flush=True)
             response = self._track_create(
                 model=_MODEL_MAIN,
