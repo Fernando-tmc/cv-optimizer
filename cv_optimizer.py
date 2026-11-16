@@ -846,7 +846,7 @@ def main_app():
         st.markdown("""
         <div class="privacy-note">
             <span>🔒</span>
-            <span>Vos données sont traitées de façon sécurisée et jamais conservées</span>
+            <span><b>Confidentialité</b><br>Le CV est analysé par une IA (Anthropic, États-Unis), puis effacé de l'outil dès la fin du traitement. Anthropic le conserve au plus 30 jours et ne l'utilise pas pour entraîner ses modèles. Le téléphone et le courriel du candidat ne sont jamais transmis.</span>
         </div>
         """, unsafe_allow_html=True)
         
@@ -919,6 +919,7 @@ def main_app():
             label_visibility="collapsed",
             key=f"cv_uploader_{st.session_state.reset_counter}"
         )
+        st.caption("⚠️ Avant dépôt, retirez la photo et toute donnée sensible inutile (date de naissance, NAS, état civil).")
         if cv_file:
             st.session_state.cv_file = cv_file
             st.success(f"✅ {cv_file.name}")
@@ -1074,6 +1075,8 @@ def process_cv_matching():
         st.session_state.processing = False
         import traceback
         st.code(traceback.format_exc())
+    finally:
+        _cleanup_tmp()
 
 # ==========================================
 # 📊 DISPLAY RESULTS
@@ -1362,6 +1365,8 @@ def process_cv_generation():
         st.error(f"❌ Erreur : {e}")
         import traceback
         st.code(traceback.format_exc())
+    finally:
+        _cleanup_tmp()
 
 
 def generate_cv(data):
@@ -1398,6 +1403,7 @@ def generate_cv(data):
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
             output_path = tmp_file.name
+        _track_tmp(output_path)
         
         suffix = '_Anonymise' if st.session_state.get('anonymized', False) else ''
         template_file = f"Template_{template_lang}{suffix}.docx"
@@ -1427,10 +1433,12 @@ def generate_cv(data):
                 sm_in = st.session_state.skills_matrix_file
                 sm_suffix = Path(sm_in.name).suffix or '.docx'
                 sm_path = Path(output_path).parent / f"skillmatrix_{ts}{sm_suffix}"
+                _track_tmp(sm_path)
                 with open(sm_path, 'wb') as f:
                     sm_in.seek(0)
                     f.write(sm_in.read())
                 merged_path = Path(output_path).parent / f"cv_merged_{ts}.docx"
+                _track_tmp(merged_path)
                 enricher.insert_skills_matrix_page2(output_path, str(sm_path), str(merged_path), target_language=st.session_state.selected_language)
                 output_path = str(merged_path)
             except Exception as _sm_e:
@@ -1511,15 +1519,40 @@ def generate_cv(data):
 # 🛠️ HELPER FUNCTIONS
 # ==========================================
 
+def _track_tmp(path):
+    """Memorise un fichier temporaire pour l'effacer en fin de traitement (vie privee)."""
+    try:
+        st.session_state.setdefault('_tmp_paths', []).append(str(path))
+    except Exception:
+        pass
+    return path
+
+
+def _cleanup_tmp():
+    """Efface TOUS les fichiers temporaires du traitement (CV, JD, skill matrix, Word intermediaires)."""
+    paths = st.session_state.get('_tmp_paths', []) or []
+    n = 0
+    for p in paths:
+        try:
+            if p and os.path.exists(p):
+                os.unlink(p)
+                n += 1
+        except Exception:
+            pass
+    st.session_state['_tmp_paths'] = []
+    if n:
+        print(f">>> Vie privee : {n} fichier(s) temporaire(s) efface(s)", flush=True)
+
+
 def save_uploaded(file, suffix=None) -> Path:
-    """Save uploaded file to temp directory"""
+    """Save uploaded file to temp directory (efface automatiquement en fin de traitement)"""
     suffix = suffix or Path(file.name).suffix
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     file.seek(0)
     tmp.write(file.read())
     tmp.flush()
     tmp.close()
-    return Path(tmp.name)
+    return _track_tmp(Path(tmp.name))
 
 # ==========================================
 # 🔚 FOOTER
