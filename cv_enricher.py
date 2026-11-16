@@ -189,6 +189,8 @@ class CVEnricher:
             kwargs.pop("temperature", None)
             eb = dict(kwargs.pop("extra_body", None) or {})
             eb.setdefault("thinking", {"type": "between_tools"})
+            if os.getenv("AI_US_ONLY", "").strip().lower() in ("1", "true", "yes", "oui"):
+                eb.setdefault("inference_geo", "us")  # traitement IA aux Etats-Unis uniquement (+10 % de cout)
             kwargs["extra_body"] = eb
         # Streaming : obligatoire pour les longues reponses (CV de 10-20 pages) et evite les
         # coupures de connexion HTTP pendant une generation longue. Resultat identique a create().
@@ -441,9 +443,23 @@ class CVEnricher:
     _CHUNK_TARGET = 15000
     _CHUNK_WORKERS = 5
 
+    @staticmethod
+    def redact_contacts(text: str) -> str:
+        """Vie privee : retire courriels, telephones et liens de profils AVANT l'envoi a l'IA
+        (le CV TMC ne les utilise jamais)."""
+        import re as _re
+        t = text or ""
+        t = _re.sub(r"[\w.+-]+@[\w-]+(\.[\w-]+)+", "[courriel retiré]", t)
+        t = _re.sub(r"(https?://)?(www\.)?(linkedin\.com|github\.com|facebook\.com|instagram\.com|x\.com|twitter\.com)/[^\s,;)]*",
+                    "[lien retiré]", t, flags=_re.I)
+        t = _re.sub(r"(?<![\w])(\+?\d{1,3}[\s.-]{0,2})?\(?\d{3}\)?[\s.-]{0,3}\d{3}[\s.-]{1,3}\d{4}(?![\w])", "[téléphone retiré]", t)
+        t = _re.sub(r"(?<![\w])\+\d{2,3}[\s.]?\d(?:[\s.]?\d{2}){4}(?![\w])", "[téléphone retiré]", t)
+        return t
+
     def parse_cv_with_claude(self, cv_text: str) -> Dict[str, Any]:
         """Parse le CV. CV court : 1 appel. CV long : morceaux lus en parallele puis fusionnes."""
         self.last_error = None
+        cv_text = self.redact_contacts(cv_text)
         if len(cv_text or "") <= self._CHUNK_THRESHOLD:
             return self._parse_cv_single(cv_text)
         chunks = self._split_cv_text(cv_text)
@@ -659,14 +675,13 @@ RÈGLES CRITIQUES:
             parsed_data = _loads_robust(response_text)
             print(f"✅ Parsing réussi!")
             print(f"   Nom: [ANONYMIZED]")
-            print(f"   Langues: {', '.join(parsed_data.get('langues', []))}")
             print(f"   Lieu: [ANONYMIZED]")
             print(f"   Compétences: {len(parsed_data.get('competences', []))}")
             print(f"   Expériences: {len(parsed_data.get('experiences', []))}")
             return parsed_data
         except json.JSONDecodeError as e:
             print(f"⚠️ Erreur JSON: {e}")
-            print(f"Réponse brute: {response_text[:500]}")
+            print(f"Réponse brute: [masquée - {len(response_text)} caractères]")
             return {}
 
     # ========================================
@@ -1944,7 +1959,6 @@ Réponds UNIQUEMENT avec du JSON pur et COMPACT (une seule ligne, sans indentati
         print(f">>> API Response received, extracting text...", flush=True)
         response_text = response.content[0].text.strip()
         print(f">>> Response length: {len(response_text)} characters", flush=True)
-        print(f">>> Response preview (first 500 chars):\n{response_text[:500]}", flush=True)
         
         # Nettoyer JSON
         if response_text.startswith('```json'):
@@ -2003,12 +2017,10 @@ Return the corrected JSON directly:"""
                 print(f"⚠️ Erreur JSON (attempt {attempt + 1}/{max_retries}): {e}", flush=True)
                 if attempt == 0:
                     print(f">>> JSON Error position: {e.pos}", flush=True)
-                    print(f">>> Problematic section: {response_text[max(0, e.pos-100):e.pos+100]}", flush=True)
                 
                 if attempt == max_retries - 1:
                     # Dernier essai échoué: retourner dict vide
                     print(f">>> All parsing attempts failed. Returning empty dict.", flush=True)
-                    print(f">>> Full response text:\n{response_text}", flush=True)
                     return {}
                 else:
                     # Continuer au prochain retry
@@ -2087,15 +2099,6 @@ Return the corrected JSON directly:"""
                     emoji = '✅'
                 print(f"      {emoji} {domaine.get('domaine', 'N/A')}: {domaine.get('score', 0)}/{domaine.get('score_max', 0)} ({domaine.get('poids', 0)}%)")
         
-        # DEBUG: Afficher une responsabilité pour voir le format
-        if enriched.get('experiences_enrichies'):
-            first_exp = enriched['experiences_enrichies'][0]
-            if first_exp.get('responsabilites'):
-                print(f"\n🔍 DEBUG - Première responsabilité :")
-                print(f"   {first_exp['responsabilites'][0]}")
-            if first_exp.get('environment'):
-                print(f"\n🔍 DEBUG - Environnement :")
-                print(f"   {first_exp['environment']}")
         
         # 🚨 Vérification critique: le dict ne doit pas être vide
         if not enriched:
@@ -2333,8 +2336,6 @@ Return the corrected JSON directly:"""
         
         print(f"✅ Mapping terminé!")
         print(f"   Nom: [ANONYMIZED]")
-        print(f"   Titre: {titre_professionnel}")
-        print(f"   Langues: {langues}")
         print(f"   Profil: RichText généré")
         total_competences = sum(len(v) for v in skills_categorized.values() if isinstance(v, list))
         print(f"   Catégories: {len(skills_categorized)}")
