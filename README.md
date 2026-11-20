@@ -2,7 +2,7 @@
 
 **AI-Powered Professional CV Optimization System**
 
-Advanced CV generation platform powered by Claude Sonnet 4.5, featuring intelligent matching analysis, OCR support, and specialized Morgan Stanley compliance mode.
+Advanced CV generation platform powered by Claude Sonnet 5.5, featuring intelligent matching analysis, OCR support, and specialized Morgan Stanley compliance mode.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
