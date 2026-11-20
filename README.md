@@ -29,7 +29,7 @@ Advanced CV generation platform powered by Claude Sonnet 5.5, featuring intellig
 - **Bilingual optimization**: French & English CV generation with language-specific formatting
 
 ### 🤖 AI-Powered Intelligence
-- **Claude Sonnet 4.5**: Latest Anthropic model for deep semantic analysis
+- **Claude Sonnet 5.5**: Latest Anthropic model for deep semantic analysis
 - **Ultra-strict scoring system V1.3.9**: Algorithmic, reproducible matching analysis (0-100)
 - **Weighted domain analysis**: Prioritizes critical skills based on job requirements
 - **Two-step generation**: Separate analysis and enrichment for optimal results
